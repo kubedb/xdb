@@ -1,6 +1,6 @@
 **This is meant to be a skeleton repo for adding support for additional databases**
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/k8sdb/x)](https://goreportcard.com/report/github.com/k8sdb/x)
+[![Go Report Card](https://goreportcard.com/badge/github.com/k8sdb/xdb)](https://goreportcard.com/report/github.com/k8sdb/xdb)
 
 [Website](https://appscode.com) • [Slack](https://slack.appscode.com) • [Twitter](https://twitter.com/AppsCodeHQ)
 

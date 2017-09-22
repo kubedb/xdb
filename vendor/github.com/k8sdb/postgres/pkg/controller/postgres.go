@@ -1,274 +1,498 @@
 package controller
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
-	"github.com/appscode/log"
-	tapi "github.com/k8sdb/apimachinery/api"
-	amc "github.com/k8sdb/apimachinery/pkg/controller"
+	"github.com/appscode/go/log"
+	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
+	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
-	kapi "k8s.io/kubernetes/pkg/api"
-	k8serr "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/unversioned"
+	"github.com/k8sdb/apimachinery/pkg/storage"
+	"github.com/k8sdb/postgres/pkg/validator"
+	kerr "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiv1 "k8s.io/client-go/pkg/api/v1"
 )
 
-func (c *Controller) create(postgres *tapi.Postgres) {
-	unversionedNow := unversioned.Now()
-	postgres.Status.Created = &unversionedNow
-	postgres.Status.DatabaseStatus = tapi.StatusDatabaseCreating
-	var err error
-	if postgres, err = c.ExtClient.Postgreses(postgres.Namespace).Update(postgres); err != nil {
-		message := fmt.Sprintf(`Fail to update Postgres: "%v". Reason: %v`, postgres.Name, err)
-		c.eventRecorder.PushEvent(
-			kapi.EventTypeWarning, eventer.EventReasonFailedToUpdate, message, postgres,
-		)
-		log.Errorln(err)
-		return
+func (c *Controller) create(postgres *tapi.Postgres) error {
+	_, err := kutildb.TryPatchPostgres(c.ExtClient, postgres.ObjectMeta, func(in *tapi.Postgres) *tapi.Postgres {
+		t := metav1.Now()
+		in.Status.CreationTime = &t
+		in.Status.Phase = tapi.DatabasePhaseCreating
+		return in
+	})
+	if err != nil {
+		c.recorder.Eventf(postgres.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+		return err
 	}
 
-	if err := c.validatePostgres(postgres); err != nil {
-		c.eventRecorder.PushEvent(kapi.EventTypeWarning, eventer.EventReasonInvalid, err.Error(), postgres)
-
-		postgres.Status.DatabaseStatus = tapi.StatusDatabaseFailed
-		postgres.Status.Reason = err.Error()
-		if _, err := c.ExtClient.Postgreses(postgres.Namespace).Update(postgres); err != nil {
-			message := fmt.Sprintf(`Fail to update Postgres: "%v". Reason: %v`, postgres.Name, err)
-			c.eventRecorder.PushEvent(
-				kapi.EventTypeWarning, eventer.EventReasonFailedToUpdate, message, postgres,
-			)
-			log.Errorln(err)
-		}
-
-		log.Errorln(err)
-		return
+	if err := validator.ValidatePostgres(c.Client, postgres); err != nil {
+		c.recorder.Event(postgres.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonInvalid, err.Error())
+		return err
 	}
 	// Event for successful validation
-	c.eventRecorder.PushEvent(
-		kapi.EventTypeNormal, eventer.EventReasonSuccessfulValidate, "Successfully validate Postgres", postgres,
+	c.recorder.Event(
+		postgres.ObjectReference(),
+		apiv1.EventTypeNormal,
+		eventer.EventReasonSuccessfulValidate,
+		"Successfully validate Postgres",
 	)
 
-	// Check if DeletedDatabase exists or not
-	recovering := false
-	deletedDb, err := c.ExtClient.DeletedDatabases(postgres.Namespace).Get(postgres.Name)
+	// Check DormantDatabase
+	matched, err := c.matchDormantDatabase(postgres)
 	if err != nil {
-		if !k8serr.IsNotFound(err) {
-			message := fmt.Sprintf(`Fail to get DeletedDatabase: "%v". Reason: %v`, postgres.Name, err)
-			c.eventRecorder.PushEvent(kapi.EventTypeWarning, eventer.EventReasonFailedToGet, message, postgres)
-			log.Errorln(err)
-			return
+		return err
+	}
+	if matched {
+		//TODO: Use Annotation Key
+		postgres.Annotations = map[string]string{
+			"kubedb.com/ignore": "",
 		}
-	} else {
-		var message string
-
-		if deletedDb.Labels[amc.LabelDatabaseType] != tapi.ResourceNamePostgres {
-			message = fmt.Sprintf(`Invalid Postgres: "%v". Exists irrelevant DeletedDatabase: "%v"`,
-				postgres.Name, deletedDb.Name)
-		} else {
-			if deletedDb.Status.Phase == tapi.PhaseDatabaseRecovering {
-				recovering = true
-			} else {
-				message = fmt.Sprintf(`Recover from DeletedDatabase: "%v"`, deletedDb.Name)
-			}
-		}
-		if !recovering {
-			// Set status to Failed
-			postgres.Status.DatabaseStatus = tapi.StatusDatabaseFailed
-			postgres.Status.Reason = message
-			if _, err := c.ExtClient.Postgreses(postgres.Namespace).Update(postgres); err != nil {
-				message := fmt.Sprintf(`Fail to update Postgres: "%v". Reason: %v`, postgres.Name, err)
-				c.eventRecorder.PushEvent(
-					kapi.EventTypeWarning, eventer.EventReasonFailedToUpdate, message, postgres,
-				)
-				log.Errorln(err)
-			}
-			c.eventRecorder.PushEvent(
-				kapi.EventTypeWarning, eventer.EventReasonFailedToCreate, message, postgres,
+		if err := c.ExtClient.Postgreses(postgres.Namespace).Delete(postgres.Name, &metav1.DeleteOptions{}); err != nil {
+			return fmt.Errorf(
+				`Failed to resume Postgres "%v" from DormantDatabase "%v". Error: %v`,
+				postgres.Name,
+				postgres.Name,
+				err,
 			)
-			log.Infoln(message)
-			return
 		}
+
+		_, err := kutildb.TryPatchDormantDatabase(c.ExtClient, postgres.ObjectMeta, func(in *tapi.DormantDatabase) *tapi.DormantDatabase {
+			in.Spec.Resume = true
+			return in
+		})
+		if err != nil {
+			c.recorder.Eventf(postgres.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+			return err
+		}
+
+		return nil
 	}
 
 	// Event for notification that kubernetes objects are creating
-	c.eventRecorder.PushEvent(
-		kapi.EventTypeNormal, eventer.EventReasonCreating, "Creating Kubernetes objects", postgres,
-	)
+	c.recorder.Event(postgres.ObjectReference(), apiv1.EventTypeNormal, eventer.EventReasonCreating, "Creating Kubernetes objects")
 
 	// create Governing Service
-	governingService := GoverningPostgres
-	if postgres.Spec.ServiceAccountName != "" {
-		governingService = postgres.Spec.ServiceAccountName
+	governingService := c.opt.GoverningService
+	if err := c.CreateGoverningService(governingService, postgres.Namespace); err != nil {
+		c.recorder.Eventf(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToCreate,
+			`Failed to create Service: "%v". Reason: %v`,
+			governingService,
+			err,
+		)
+		return err
 	}
 
-	if err := c.CreateGoverningServiceAccount(governingService, postgres.Namespace); err != nil {
-		message := fmt.Sprintf(`Failed to create ServiceAccount: "%v". Reason: %v`, governingService, err)
-		c.eventRecorder.PushEvent(kapi.EventTypeWarning, eventer.EventReasonFailedToCreate, message, postgres)
-		log.Errorln(err)
-		return
+	// ensure database Service
+	if err := c.ensureService(postgres); err != nil {
+		return err
 	}
-	postgres.Spec.ServiceAccountName = governingService
+
+	// ensure database StatefulSet
+	if err := c.ensureStatefulSet(postgres); err != nil {
+		return err
+	}
+
+	c.recorder.Event(
+		postgres.ObjectReference(),
+		apiv1.EventTypeNormal,
+		eventer.EventReasonSuccessfulCreate,
+		"Successfully created Postgres",
+	)
+
+	// Ensure Schedule backup
+	c.ensureBackupScheduler(postgres)
+
+	if postgres.Spec.Monitor != nil {
+		if err := c.addMonitor(postgres); err != nil {
+			c.recorder.Eventf(
+				postgres.ObjectReference(),
+				apiv1.EventTypeWarning,
+				eventer.EventReasonFailedToCreate,
+				"Failed to add monitoring system. Reason: %v",
+				err,
+			)
+			log.Errorln(err)
+			return nil
+		}
+		c.recorder.Event(
+			postgres.ObjectReference(),
+			apiv1.EventTypeNormal,
+			eventer.EventReasonSuccessfulCreate,
+			"Successfully added monitoring system.",
+		)
+	}
+	return nil
+}
+
+func (c *Controller) matchDormantDatabase(postgres *tapi.Postgres) (bool, error) {
+	// Check if DormantDatabase exists or not
+	dormantDb, err := c.ExtClient.DormantDatabases(postgres.Namespace).Get(postgres.Name, metav1.GetOptions{})
+	if err != nil {
+		if !kerr.IsNotFound(err) {
+			c.recorder.Eventf(
+				postgres.ObjectReference(),
+				apiv1.EventTypeWarning,
+				eventer.EventReasonFailedToGet,
+				`Fail to get DormantDatabase: "%v". Reason: %v`,
+				postgres.Name,
+				err,
+			)
+			return false, err
+		}
+		return false, nil
+	}
+
+	var sendEvent = func(message string) (bool, error) {
+		c.recorder.Event(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToCreate,
+			message,
+		)
+		return false, errors.New(message)
+	}
+
+	// Check DatabaseKind
+	if dormantDb.Labels[tapi.LabelDatabaseKind] != tapi.ResourceKindPostgres {
+		return sendEvent(fmt.Sprintf(`Invalid Postgres: "%v". Exists DormantDatabase "%v" of different Kind`,
+			postgres.Name, dormantDb.Name))
+	}
+
+	// Check InitSpec
+	initSpecAnnotationStr := dormantDb.Annotations[tapi.PostgresInitSpec]
+	if initSpecAnnotationStr != "" {
+		var initSpecAnnotation *tapi.InitSpec
+		if err := json.Unmarshal([]byte(initSpecAnnotationStr), &initSpecAnnotation); err != nil {
+			return sendEvent(err.Error())
+		}
+
+		if postgres.Spec.Init != nil {
+			if !reflect.DeepEqual(initSpecAnnotation, postgres.Spec.Init) {
+				return sendEvent("InitSpec mismatches with DormantDatabase annotation")
+			}
+		}
+	}
+
+	// Check Origin Spec
+	drmnOriginSpec := dormantDb.Spec.Origin.Spec.Postgres
+	originalSpec := postgres.Spec
+	originalSpec.Init = nil
+
+	if originalSpec.DatabaseSecret == nil {
+		originalSpec.DatabaseSecret = &apiv1.SecretVolumeSource{
+			SecretName: postgres.Name + "-admin-auth",
+		}
+	}
+
+	if !reflect.DeepEqual(drmnOriginSpec, &originalSpec) {
+		return sendEvent("Postgres spec mismatches with OriginSpec in DormantDatabases")
+	}
+
+	return true, nil
+}
+
+func (c *Controller) ensureService(postgres *tapi.Postgres) error {
+	// Check if service name exists
+	found, err := c.findService(postgres)
+	if err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
 
 	// create database Service
-	if err := c.createService(postgres.Name, postgres.Namespace); err != nil {
-		message := fmt.Sprintf(`Failed to create Service. Reason: %v`, err)
-		c.eventRecorder.PushEvent(kapi.EventTypeWarning, eventer.EventReasonFailedToCreate, message, postgres)
-		log.Errorln(err)
-		return
+	if err := c.createService(postgres); err != nil {
+		c.recorder.Eventf(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToCreate,
+			"Failed to create Service. Reason: %v",
+			err,
+		)
+		return err
+	}
+	return nil
+}
+
+func (c *Controller) ensureStatefulSet(postgres *tapi.Postgres) error {
+	found, err := c.findStatefulSet(postgres)
+	if err != nil {
+		return err
+	}
+	if found {
+		return nil
 	}
 
 	// Create statefulSet for Postgres database
 	statefulSet, err := c.createStatefulSet(postgres)
 	if err != nil {
-		message := fmt.Sprintf(`Failed to create StatefulSet. Reason: %v`, err)
-		c.eventRecorder.PushEvent(kapi.EventTypeWarning, eventer.EventReasonFailedToCreate, message, postgres)
-		log.Errorln(err)
-		return
+		c.recorder.Eventf(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToCreate,
+			"Failed to create StatefulSet. Reason: %v",
+			err,
+		)
+		return err
 	}
 
 	// Check StatefulSet Pod status
 	if err := c.CheckStatefulSetPodStatus(statefulSet, durationCheckStatefulSet); err != nil {
-		message := fmt.Sprintf(`Failed to create StatefulSet. Reason: %v`, err)
-		c.eventRecorder.PushEvent(
-			kapi.EventTypeWarning, eventer.EventReasonFailedToStart, message, postgres,
+		c.recorder.Eventf(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToStart,
+			`Failed to create StatefulSet. Reason: %v`,
+			err,
 		)
-		log.Errorln(err)
-		return
+		return err
 	} else {
-		c.eventRecorder.PushEvent(
-			kapi.EventTypeNormal, eventer.EventReasonSuccessfulCreate, "Successfully created Postgres",
-			postgres,
+		c.recorder.Event(
+			postgres.ObjectReference(),
+			apiv1.EventTypeNormal,
+			eventer.EventReasonSuccessfulCreate,
+			"Successfully created StatefulSet",
 		)
 	}
 
-	if recovering {
-		// Delete DeletedDatabase instance
-		if err := c.ExtClient.DeletedDatabases(deletedDb.Namespace).Delete(deletedDb.Name); err != nil {
-			message := fmt.Sprintf(`Failed to delete DeletedDatabase: "%v". Reason: %v`, deletedDb.Name, err)
-			c.eventRecorder.PushEvent(
-				kapi.EventTypeWarning, eventer.EventReasonFailedToDelete, message, postgres,
-			)
-			log.Errorln(err)
+	if postgres.Spec.Init != nil && postgres.Spec.Init.SnapshotSource != nil {
+		_, err := kutildb.TryPatchPostgres(c.ExtClient, postgres.ObjectMeta, func(in *tapi.Postgres) *tapi.Postgres {
+			in.Status.Phase = tapi.DatabasePhaseInitializing
+			return in
+		})
+		if err != nil {
+			c.recorder.Eventf(postgres, apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+			return err
 		}
-		message := fmt.Sprintf(`Successfully deleted DeletedDatabase: "%v"`, deletedDb.Name)
-		c.eventRecorder.PushEvent(
-			kapi.EventTypeNormal, eventer.EventReasonSuccessfulDelete, message, postgres,
-		)
+
+		if err := c.initialize(postgres); err != nil {
+			c.recorder.Eventf(
+				postgres.ObjectReference(),
+				apiv1.EventTypeWarning,
+				eventer.EventReasonFailedToInitialize,
+				"Failed to initialize. Reason: %v",
+				err,
+			)
+		}
 	}
 
-	postgres.Status.DatabaseStatus = tapi.StatusDatabaseRunning
-	if _, err := c.ExtClient.Postgreses(postgres.Namespace).Update(postgres); err != nil {
-		message := fmt.Sprintf(`Fail to update Postgres: "%v". Reason: %v`, postgres.Name, err)
-		c.eventRecorder.PushEvent(
-			kapi.EventTypeWarning, eventer.EventReasonFailedToUpdate, message, postgres,
-		)
-		log.Errorln(err)
+	_, err = kutildb.TryPatchPostgres(c.ExtClient, postgres.ObjectMeta, func(in *tapi.Postgres) *tapi.Postgres {
+		in.Status.Phase = tapi.DatabasePhaseRunning
+		return in
+	})
+	if err != nil {
+		c.recorder.Eventf(postgres, apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+		return err
 	}
+	return nil
+}
 
+func (c *Controller) ensureBackupScheduler(postgres *tapi.Postgres) {
 	// Setup Schedule backup
 	if postgres.Spec.BackupSchedule != nil {
 		err := c.cronController.ScheduleBackup(postgres, postgres.ObjectMeta, postgres.Spec.BackupSchedule)
 		if err != nil {
-			message := fmt.Sprintf(`Failed to schedule snapshot. Reason: %v`, err)
-			c.eventRecorder.PushEvent(
-				kapi.EventTypeWarning, eventer.EventReasonFailedToSchedule, message, postgres,
+			c.recorder.Eventf(
+				postgres.ObjectReference(),
+				apiv1.EventTypeWarning,
+				eventer.EventReasonFailedToSchedule,
+				"Failed to schedule snapshot. Reason: %v",
+				err,
 			)
 			log.Errorln(err)
 		}
+	} else {
+		c.cronController.StopBackupScheduling(postgres.ObjectMeta)
 	}
 }
 
-func (c *Controller) delete(postgres *tapi.Postgres) {
+const (
+	durationCheckRestoreJob = time.Minute * 30
+)
 
-	c.eventRecorder.PushEvent(
-		kapi.EventTypeNormal, eventer.EventReasonDeleting, "Deleting Postgres", postgres,
+func (c *Controller) initialize(postgres *tapi.Postgres) error {
+	snapshotSource := postgres.Spec.Init.SnapshotSource
+	// Event for notification that kubernetes objects are creating
+	c.recorder.Eventf(
+		postgres.ObjectReference(),
+		apiv1.EventTypeNormal,
+		eventer.EventReasonInitializing,
+		`Initializing from Snapshot: "%v"`,
+		snapshotSource.Name,
 	)
 
-	if postgres.Spec.DoNotDelete {
-		message := fmt.Sprintf(`Postgres "%v" is locked.`, postgres.Name)
-		c.eventRecorder.PushEvent(
-			kapi.EventTypeWarning, eventer.EventReasonFailedToDelete, message, postgres,
+	namespace := snapshotSource.Namespace
+	if namespace == "" {
+		namespace = postgres.Namespace
+	}
+	snapshot, err := c.ExtClient.Snapshots(namespace).Get(snapshotSource.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	secret, err := storage.NewOSMSecret(c.Client, snapshot)
+	if err != nil {
+		return err
+	}
+	_, err = c.Client.CoreV1().Secrets(secret.Namespace).Create(secret)
+	if err != nil {
+		return err
+	}
+
+	job, err := c.createRestoreJob(postgres, snapshot)
+	if err != nil {
+		return err
+	}
+
+	jobSuccess := c.CheckDatabaseRestoreJob(job, postgres, c.recorder, durationCheckRestoreJob)
+	if jobSuccess {
+		c.recorder.Event(
+			postgres.ObjectReference(),
+			apiv1.EventTypeNormal,
+			eventer.EventReasonSuccessfulInitialize,
+			"Successfully completed initialization",
+		)
+	} else {
+		c.recorder.Event(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToInitialize,
+			"Failed to complete initialization",
+		)
+	}
+	return nil
+}
+
+func (c *Controller) pause(postgres *tapi.Postgres) error {
+	if postgres.Annotations != nil {
+		if val, found := postgres.Annotations["kubedb.com/ignore"]; found {
+			//TODO: Add Event Reason "Ignored"
+			c.recorder.Event(postgres.ObjectReference(), apiv1.EventTypeNormal, "Ignored", val)
+			return nil
+		}
+	}
+
+	c.recorder.Event(postgres.ObjectReference(), apiv1.EventTypeNormal, eventer.EventReasonPausing, "Pausing Postgres")
+
+	if postgres.Spec.DoNotPause {
+		c.recorder.Eventf(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToPause,
+			`Postgres "%v" is locked.`,
+			postgres.Name,
 		)
 
 		if err := c.reCreatePostgres(postgres); err != nil {
-			message := fmt.Sprintf(`Failed to recreate Postgres: "%v". Reason: %v`, postgres, err)
-			c.eventRecorder.PushEvent(
-				kapi.EventTypeWarning, eventer.EventReasonFailedToCreate, message, postgres,
+			c.recorder.Eventf(
+				postgres.ObjectReference(),
+				apiv1.EventTypeWarning,
+				eventer.EventReasonFailedToCreate,
+				`Failed to recreate Postgres: "%v". Reason: %v`,
+				postgres.Name,
+				err,
 			)
-			log.Errorln(err)
-			return
+			return err
 		}
-		return
+		return nil
 	}
 
-	if _, err := c.createDeletedDatabase(postgres); err != nil {
-		message := fmt.Sprintf(`Failed to create DeletedDatabase: "%v". Reason: %v`, postgres.Name, err)
-		c.eventRecorder.PushEvent(
-			kapi.EventTypeWarning, eventer.EventReasonFailedToCreate, message, postgres,
+	if _, err := c.createDormantDatabase(postgres); err != nil {
+		c.recorder.Eventf(
+			postgres.ObjectReference(),
+			apiv1.EventTypeWarning,
+			eventer.EventReasonFailedToCreate,
+			`Failed to create DormantDatabase: "%v". Reason: %v`,
+			postgres.Name,
+			err,
 		)
-		log.Errorln(err)
-		return
+		return err
 	}
-	message := fmt.Sprintf(`Successfully created DeletedDatabase: "%v"`, postgres.Name)
-	c.eventRecorder.PushEvent(
-		kapi.EventTypeNormal, eventer.EventReasonSuccessfulCreate, message, postgres,
+	c.recorder.Eventf(
+		postgres.ObjectReference(),
+		apiv1.EventTypeNormal,
+		eventer.EventReasonSuccessfulCreate,
+		`Successfully created DormantDatabase: "%v"`,
+		postgres.Name,
 	)
 
 	c.cronController.StopBackupScheduling(postgres.ObjectMeta)
+
+	if postgres.Spec.Monitor != nil {
+		if err := c.deleteMonitor(postgres); err != nil {
+			c.recorder.Eventf(
+				postgres.ObjectReference(),
+				apiv1.EventTypeWarning,
+				eventer.EventReasonFailedToDelete,
+				"Failed to delete monitoring system. Reason: %v",
+				err,
+			)
+			log.Errorln(err)
+			return nil
+		}
+		c.recorder.Event(
+			postgres.ObjectReference(),
+			apiv1.EventTypeNormal,
+			eventer.EventReasonSuccessfulMonitorDelete,
+			"Successfully deleted monitoring system.",
+		)
+	}
+	return nil
 }
 
-func (c *Controller) update(oldPostgres, updatedPostgres *tapi.Postgres) {
-	if (updatedPostgres.Spec.Replicas != oldPostgres.Spec.Replicas) && oldPostgres.Spec.Replicas >= 0 {
-		statefulSetName := fmt.Sprintf("%v-%v", amc.DatabaseNamePrefix, updatedPostgres.Name)
-		statefulSet, err := c.Client.Apps().StatefulSets(updatedPostgres.Namespace).Get(statefulSetName)
-		if err != nil {
-			message := fmt.Sprintf(`Failed to get StatefulSet: "%v". Reason: %v`, statefulSetName, err)
-			c.eventRecorder.PushEvent(
-				kapi.EventTypeNormal, eventer.EventReasonFailedToGet, message, updatedPostgres,
-			)
-			log.Errorln(err)
-			return
-		}
-		statefulSet.Spec.Replicas = oldPostgres.Spec.Replicas
-		if _, err := c.Client.Apps().StatefulSets(statefulSet.Namespace).Update(statefulSet); err != nil {
-			message := fmt.Sprintf(`Failed to update StatefulSet: "%v". Reason: %v`, statefulSetName, err)
-			c.eventRecorder.PushEvent(
-				kapi.EventTypeNormal, eventer.EventReasonFailedToUpdate, message, updatedPostgres,
-			)
-			log.Errorln(err)
-			return
-		}
+func (c *Controller) update(oldPostgres, updatedPostgres *tapi.Postgres) error {
+
+	if err := validator.ValidatePostgres(c.Client, updatedPostgres); err != nil {
+		c.recorder.Event(updatedPostgres.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonInvalid, err.Error())
+		return err
+	}
+	// Event for successful validation
+	c.recorder.Event(
+		updatedPostgres.ObjectReference(),
+		apiv1.EventTypeNormal,
+		eventer.EventReasonSuccessfulValidate,
+		"Successfully validate Postgres",
+	)
+
+	if err := c.ensureService(updatedPostgres); err != nil {
+		return err
+	}
+	if err := c.ensureStatefulSet(updatedPostgres); err != nil {
+		return err
 	}
 
 	if !reflect.DeepEqual(updatedPostgres.Spec.BackupSchedule, oldPostgres.Spec.BackupSchedule) {
-		backupScheduleSpec := updatedPostgres.Spec.BackupSchedule
-		if backupScheduleSpec != nil {
-			if err := c.ValidateBackupSchedule(backupScheduleSpec); err != nil {
-				c.eventRecorder.PushEvent(
-					kapi.EventTypeNormal, eventer.EventReasonInvalid, err.Error(), updatedPostgres,
-				)
-				log.Errorln(err)
-				return
-			}
-
-			if err := c.CheckBucketAccess(backupScheduleSpec.SnapshotSpec, oldPostgres.Namespace); err != nil {
-				c.eventRecorder.PushEvent(
-					kapi.EventTypeNormal, eventer.EventReasonInvalid, err.Error(), updatedPostgres,
-				)
-				log.Errorln(err)
-				return
-			}
-
-			if err := c.cronController.ScheduleBackup(
-				oldPostgres, oldPostgres.ObjectMeta, oldPostgres.Spec.BackupSchedule); err != nil {
-				message := fmt.Sprintf(`Failed to schedule snapshot. Reason: %v`, err)
-				c.eventRecorder.PushEvent(
-					kapi.EventTypeWarning, eventer.EventReasonFailedToSchedule, message, updatedPostgres,
-				)
-				log.Errorln(err)
-			}
-		} else {
-			c.cronController.StopBackupScheduling(oldPostgres.ObjectMeta)
-		}
+		c.ensureBackupScheduler(updatedPostgres)
 	}
+
+	if !reflect.DeepEqual(oldPostgres.Spec.Monitor, updatedPostgres.Spec.Monitor) {
+		if err := c.updateMonitor(oldPostgres, updatedPostgres); err != nil {
+			c.recorder.Eventf(
+				updatedPostgres.ObjectReference(),
+				apiv1.EventTypeWarning,
+				eventer.EventReasonFailedToUpdate,
+				"Failed to update monitoring system. Reason: %v",
+				err,
+			)
+			log.Errorln(err)
+			return nil
+		}
+		c.recorder.Event(
+			updatedPostgres.ObjectReference(),
+			apiv1.EventTypeNormal,
+			eventer.EventReasonSuccessfulMonitorUpdate,
+			"Successfully updated monitoring system.",
+		)
+
+	}
+	return nil
 }

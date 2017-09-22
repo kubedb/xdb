@@ -4,19 +4,24 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
+	"os"
 	"strings"
+
+	"net/http"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/graymeta/stow"
 	"github.com/pkg/errors"
 )
 
 // Amazon S3 bucket contains a creationdate and a name.
 type container struct {
-	name   string // Name is needed to retrieve items.
-	client *s3.S3 // Client is responsible for performing the requests.
-	region string // Describes the AWS Availability Zone of the S3 Bucket.
+	name           string // Name is needed to retrieve items.
+	client         *s3.S3 // Client is responsible for performing the requests.
+	region         string // Describes the AWS Availability Zone of the S3 Bucket.
+	customEndpoint string
 }
 
 // ID returns a string value which represents the name of the container.
@@ -35,25 +40,28 @@ func (c *container) Item(id string) (stow.Item, error) {
 	return c.getItem(id)
 }
 
-// Items sends a request to retrieve a list of items that are prepended with
-// the prefix argument. The 'cursor' variable facilitates pagination.
-func (c *container) Items(prefix, cursor string, count int) ([]stow.Item, string, error) {
+func (c *container) Browse(prefix, delimiter, cursor string, count int) (*stow.ItemPage, error) {
 	itemLimit := int64(count)
 
 	params := &s3.ListObjectsInput{
-		Bucket:  aws.String(c.Name()),
-		Marker:  &cursor,
-		MaxKeys: &itemLimit,
-		Prefix:  &prefix,
+		Bucket:    aws.String(c.Name()),
+		Delimiter: aws.String(delimiter),
+		Marker:    &cursor,
+		MaxKeys:   &itemLimit,
+		Prefix:    &prefix,
 	}
 
 	response, err := c.client.ListObjects(params)
 	if err != nil {
-		return nil, "", errors.Wrap(err, "Items, listing objects")
+		return nil, errors.Wrap(err, "Items, listing objects")
+	}
+
+	prefixes := make([]string, len(response.CommonPrefixes))
+	for i, prefix := range response.CommonPrefixes {
+		prefixes[i] = *prefix.Prefix
 	}
 
 	containerItems := make([]stow.Item, len(response.Contents)) // Allocate space for the Item slice.
-
 	for i, object := range response.Contents {
 		etag := cleanEtag(*object.ETag) // Copy etag value and remove the strings.
 		object.ETag = &etag             // Assign the value to the object field representing the item.
@@ -81,7 +89,17 @@ func (c *container) Items(prefix, cursor string, count int) ([]stow.Item, string
 		marker = containerItems[len(containerItems)-1].Name()
 	}
 
-	return containerItems, marker, nil
+	return &stow.ItemPage{Prefixes: prefixes, Items: containerItems, Cursor: marker}, nil
+}
+
+// Items sends a request to retrieve a list of items that are prepended with
+// the prefix argument. The 'cursor' variable facilitates pagination.
+func (c *container) Items(prefix, cursor string, count int) ([]stow.Item, string, error) {
+	page, err := c.Browse(prefix, "", cursor, count)
+	if err != nil {
+		return nil, "", err
+	}
+	return page.Items, cursor, err
 }
 
 func (c *container) RemoveItem(id string) error {
@@ -102,6 +120,42 @@ func (c *container) RemoveItem(id string) error {
 // content, and the size of the file. Many more attributes can be given to the
 // file, including metadata. Keeping it simple for now.
 func (c *container) Put(name string, r io.Reader, size int64, metadata map[string]interface{}) (stow.Item, error) {
+	switch file := r.(type) {
+	case *os.File:
+		uploader := s3manager.NewUploaderWithClient(c.client)
+
+		// Convert map[string]interface{} to map[string]*string
+		mdPrepped, err := prepMetadata(metadata)
+
+		// Perform an upload.
+		result, err := uploader.Upload(&s3manager.UploadInput{
+			Bucket:   aws.String(c.name),
+			Key:      aws.String(name),
+			Body:     file,
+			Metadata: mdPrepped,
+		})
+
+		if err != nil {
+			return nil, errors.Wrap(err, "Put, uploading object")
+		}
+
+		newItem := &item{
+			container: c,
+			client:    c.client,
+			properties: properties{
+				ETag: &result.UploadID,
+				Key:  &name,
+				// Owner        *s3.Owner
+				// StorageClass *string
+			},
+		}
+		if st, err := file.Stat(); err == nil && !st.IsDir() {
+			newItem.properties.Size = aws.Int64(st.Size())
+			newItem.properties.LastModified = aws.Time(st.ModTime())
+		}
+		return newItem, nil
+	}
+
 	content, err := ioutil.ReadAll(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create or update item, reading content")
@@ -113,10 +167,15 @@ func (c *container) Put(name string, r io.Reader, size int64, metadata map[strin
 		return nil, errors.Wrap(err, "unable to create or update item, preparing metadata")
 	}
 
+	// Get Content Type as string
+	// https://golang.org/pkg/net/http/#DetectContentType
+	contentType := http.DetectContentType(content)
+
 	params := &s3.PutObjectInput{
 		Bucket:        aws.String(c.name), // Required
 		Key:           aws.String(name),   // Required
 		ContentLength: aws.Int64(size),
+		ContentType:   &contentType,
 		Body:          bytes.NewReader(content),
 		Metadata:      mdPrepped, // map[string]*string
 	}
@@ -163,11 +222,11 @@ func (c *container) Region() string {
 // for this if so.
 func (c *container) getItem(id string) (*item, error) {
 	params := &s3.GetObjectInput{
-		Bucket: aws.String(c.Name()),
+		Bucket: aws.String(c.name),
 		Key:    aws.String(id),
 	}
 
-	response, err := c.client.GetObject(params)
+	res, err := c.client.GetObject(params)
 	if err != nil {
 		// stow needs ErrNotFound to pass the test but amazon returns an opaque error
 		if strings.Contains(err.Error(), "NoSuchKey") {
@@ -175,10 +234,10 @@ func (c *container) getItem(id string) (*item, error) {
 		}
 		return nil, errors.Wrap(err, "getItem, getting the object")
 	}
-	defer response.Body.Close()
+	defer res.Body.Close()
 
-	etag := cleanEtag(*response.ETag) // etag string value contains quotations. Remove them.
-	md, err := parseMetadata(response.Metadata)
+	etag := cleanEtag(*res.ETag) // etag string value contains quotations. Remove them.
+	md, err := parseMetadata(res.Metadata)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to retrieve Item information, parsing metadata")
 	}
@@ -189,10 +248,10 @@ func (c *container) getItem(id string) (*item, error) {
 		properties: properties{
 			ETag:         &etag,
 			Key:          &id,
-			LastModified: response.LastModified,
+			LastModified: res.LastModified,
 			Owner:        nil, // not returned in the response.
-			Size:         response.ContentLength,
-			StorageClass: response.StorageClass,
+			Size:         res.ContentLength,
+			StorageClass: res.StorageClass,
 			Metadata:     md,
 		},
 	}

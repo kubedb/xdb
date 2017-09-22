@@ -1,23 +1,23 @@
 package controller
 
 import (
-	tapi "github.com/k8sdb/apimachinery/api"
+	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	kbatch "k8s.io/kubernetes/pkg/apis/batch"
 	"k8s.io/kubernetes/pkg/runtime"
 )
 
-func (c *Controller) ValidateSnapshot(dbSnapshot *tapi.DatabaseSnapshot) error {
+func (c *Controller) ValidateSnapshot(dbSnapshot *tapi.Snapshot) error {
 	return nil
 }
 
-func (c *Controller) GetDatabase(snapshot *tapi.DatabaseSnapshot) (runtime.Object, error) {
+func (c *Controller) GetDatabase(snapshot *tapi.Snapshot) (runtime.Object, error) {
 	return nil, nil
 }
 
-func (c *Controller) GetSnapshotter(snapshot *tapi.DatabaseSnapshot) (*kbatch.Job, error) {
+func (c *Controller) GetSnapshotter(snapshot *tapi.Snapshot) (*kbatch.Job, error) {
 	return nil, nil
 }
 
-func (c *Controller) DestroySnapshot(dbSnapshot *tapi.DatabaseSnapshot) error {
+func (c *Controller) DestroySnapshot(dbSnapshot *tapi.Snapshot) error {
 	return nil
 }

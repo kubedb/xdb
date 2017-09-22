@@ -5,28 +5,52 @@ import (
 	"time"
 
 	"github.com/appscode/go/hold"
-	"github.com/appscode/log"
-	tapi "github.com/k8sdb/apimachinery/api"
+	"github.com/appscode/go/log"
+	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
+	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1alpha1"
+	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
+	tcs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
 	amc "github.com/k8sdb/apimachinery/pkg/controller"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
-	kapi "k8s.io/kubernetes/pkg/api"
-	k8serr "k8s.io/kubernetes/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/apis/extensions"
-	"k8s.io/kubernetes/pkg/client/cache"
-	rest "k8s.io/kubernetes/pkg/client/restclient"
-	"k8s.io/kubernetes/pkg/labels"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/wait"
-	"k8s.io/kubernetes/pkg/watch"
+	extensionsobj "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	kerr "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	clientset "k8s.io/client-go/kubernetes"
+	apiv1 "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 )
+
+type Options struct {
+	// Operator namespace
+	OperatorNamespace string
+	// Exporter tag
+	ExporterTag string
+	// Governing service
+	GoverningService string
+	// Address to listen on for web interface and telemetry.
+	Address string
+	// Enable RBAC for database workloads
+	EnableRbac bool
+}
 
 type Controller struct {
 	*amc.Controller
+	// Api Extension Client
+	ApiExtKubeClient apiextensionsclient.Interface
+	// Prometheus client
+	promClient pcm.MonitoringV1alpha1Interface
 	// Cron Controller
 	cronController amc.CronControllerInterface
 	// Event Recorder
-	eventRecorder eventer.EventRecorderInterface
+	recorder record.EventRecorder
+	// Flag data
+	opt Options
 	// sync time to sync the list.
 	syncPeriod time.Duration
 }
@@ -34,43 +58,60 @@ type Controller struct {
 var _ amc.Snapshotter = &Controller{}
 var _ amc.Deleter = &Controller{}
 
-func New(cfg *rest.Config) *Controller {
-	c := amc.NewController(cfg)
+func New(
+	client clientset.Interface,
+	apiExtKubeClient apiextensionsclient.Interface,
+	extClient tcs.KubedbV1alpha1Interface,
+	promClient pcm.MonitoringV1alpha1Interface,
+	cronController amc.CronControllerInterface,
+	opt Options,
+) *Controller {
 	return &Controller{
-		Controller:     c,
-		cronController: amc.NewCronController(c.Client, c.ExtClient),
-		eventRecorder:  eventer.NewEventRecorder(c.Client, "Postgres Controller"),
-		syncPeriod:     time.Minute * 2,
+		Controller: &amc.Controller{
+			Client:    client,
+			ExtClient: extClient,
+		},
+		ApiExtKubeClient: apiExtKubeClient,
+		promClient:       promClient,
+		cronController:   cronController,
+		recorder:         eventer.NewEventRecorder(client, "Postgres operator"),
+		opt:              opt,
+		syncPeriod:       time.Minute * 2,
 	}
+}
+
+func (c *Controller) Run() {
+	// Ensure Postgres CRD
+	c.ensureCustomResourceDefinition()
+
+	// Start Cron
+	c.cronController.StartCron()
+
+	// Watch Postgres TPR objects
+	go c.watchPostgres()
+	// Watch Snapshot with labelSelector only for Postgres
+	go c.watchSnapshot()
+	// Watch DormantDatabase with labelSelector only for Postgres
+	go c.watchDormantDatabase()
 }
 
 // Blocks caller. Intended to be called as a Go routine.
 func (c *Controller) RunAndHold() {
-	// Ensure Postgres TPR
-	c.ensureThirdPartyResource()
+	c.Run()
 
-	// Start Cron
-	c.cronController.StartCron()
-	// Stop Cron
-	defer c.cronController.StopCron()
-
-	// Watch Postgres TPR objects
-	go c.watchPostgres()
-	// Watch DatabaseSnapshot with labelSelector only for Postgres
-	go c.watchDatabaseSnapshot()
-	// Watch DeletedDatabase with labelSelector only for Postgres
-	go c.watchDeletedDatabase()
+	// Run HTTP server to expose metrics, audit endpoint & debug profiles.
+	go c.runHTTPServer()
 	// hold
 	hold.Hold()
 }
 
 func (c *Controller) watchPostgres() {
 	lw := &cache.ListWatch{
-		ListFunc: func(opts kapi.ListOptions) (runtime.Object, error) {
-			return c.ExtClient.Postgreses(kapi.NamespaceAll).List(kapi.ListOptions{})
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			return c.ExtClient.Postgreses(metav1.NamespaceAll).List(metav1.ListOptions{})
 		},
-		WatchFunc: func(options kapi.ListOptions) (watch.Interface, error) {
-			return c.ExtClient.Postgreses(kapi.NamespaceAll).Watch(kapi.ListOptions{})
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			return c.ExtClient.Postgreses(metav1.NamespaceAll).Watch(metav1.ListOptions{})
 		},
 	}
 
@@ -81,12 +122,18 @@ func (c *Controller) watchPostgres() {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				postgres := obj.(*tapi.Postgres)
-				if postgres.Status.Created == nil {
-					c.create(postgres)
+				if postgres.Status.CreationTime == nil {
+					if err := c.create(postgres); err != nil {
+						log.Errorln(err)
+						c.pushFailureEvent(postgres, err.Error())
+					}
 				}
+
 			},
 			DeleteFunc: func(obj interface{}) {
-				c.delete(obj.(*tapi.Postgres))
+				if err := c.pause(obj.(*tapi.Postgres)); err != nil {
+					log.Errorln(err)
+				}
 			},
 			UpdateFunc: func(old, new interface{}) {
 				oldObj, ok := old.(*tapi.Postgres)
@@ -98,7 +145,9 @@ func (c *Controller) watchPostgres() {
 					return
 				}
 				if !reflect.DeepEqual(oldObj.Spec, newObj.Spec) {
-					c.update(oldObj, newObj)
+					if err := c.update(oldObj, newObj); err != nil {
+						log.Errorln(err)
+					}
 				}
 			},
 		},
@@ -106,80 +155,104 @@ func (c *Controller) watchPostgres() {
 	cacheController.Run(wait.NeverStop)
 }
 
-func (c *Controller) watchDatabaseSnapshot() {
+func (c *Controller) watchSnapshot() {
 	labelMap := map[string]string{
-		amc.LabelDatabaseType: tapi.ResourceNamePostgres,
+		tapi.LabelDatabaseKind: tapi.ResourceKindPostgres,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{
-		ListFunc: func(opts kapi.ListOptions) (runtime.Object, error) {
-			return c.ExtClient.DatabaseSnapshots(kapi.NamespaceAll).List(
-				kapi.ListOptions{
-					LabelSelector: labels.SelectorFromSet(labels.Set(labelMap)),
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			return c.ExtClient.Snapshots(metav1.NamespaceAll).List(
+				metav1.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labelMap).String(),
 				})
 		},
-		WatchFunc: func(options kapi.ListOptions) (watch.Interface, error) {
-			return c.ExtClient.DatabaseSnapshots(kapi.NamespaceAll).Watch(
-				kapi.ListOptions{
-					LabelSelector: labels.SelectorFromSet(labels.Set(labelMap)),
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			return c.ExtClient.Snapshots(metav1.NamespaceAll).Watch(
+				metav1.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labelMap).String(),
 				})
 		},
 	}
 
-	amc.NewDatabaseSnapshotController(c.Client, c.ExtClient, c, lw, c.syncPeriod).Run()
+	amc.NewSnapshotController(c.Client, c.ApiExtKubeClient, c.ExtClient, c, lw, c.syncPeriod).Run()
 }
 
-func (c *Controller) watchDeletedDatabase() {
+func (c *Controller) watchDormantDatabase() {
 	labelMap := map[string]string{
-		amc.LabelDatabaseType: tapi.ResourceNamePostgres,
+		tapi.LabelDatabaseKind: tapi.ResourceKindPostgres,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{
-		ListFunc: func(opts kapi.ListOptions) (runtime.Object, error) {
-			return c.ExtClient.DeletedDatabases(kapi.NamespaceAll).List(
-				kapi.ListOptions{
-					LabelSelector: labels.SelectorFromSet(labels.Set(labelMap)),
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			return c.ExtClient.DormantDatabases(metav1.NamespaceAll).List(
+				metav1.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labelMap).String(),
 				})
 		},
-		WatchFunc: func(options kapi.ListOptions) (watch.Interface, error) {
-			return c.ExtClient.DeletedDatabases(kapi.NamespaceAll).Watch(
-				kapi.ListOptions{
-					LabelSelector: labels.SelectorFromSet(labels.Set(labelMap)),
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			return c.ExtClient.DormantDatabases(metav1.NamespaceAll).Watch(
+				metav1.ListOptions{
+					LabelSelector: labels.SelectorFromSet(labelMap).String(),
 				})
 		},
 	}
 
-	amc.NewDeletedDbController(c.Client, c.ExtClient, c, lw, c.syncPeriod).Run()
+	amc.NewDormantDbController(c.Client, c.ApiExtKubeClient, c.ExtClient, c, lw, c.syncPeriod).Run()
 }
 
-func (c *Controller) ensureThirdPartyResource() {
-	log.Infoln("Ensuring ThirdPartyResource...")
+func (c *Controller) ensureCustomResourceDefinition() {
+	log.Infoln("Ensuring CustomResourceDefinition...")
 
-	resourceName := tapi.ResourceNamePostgres + "." + tapi.V1beta1SchemeGroupVersion.Group
-	if _, err := c.Client.Extensions().ThirdPartyResources().Get(resourceName); err != nil {
-		if !k8serr.IsNotFound(err) {
+	resourceName := tapi.ResourceTypePostgres + "." + tapi.SchemeGroupVersion.Group
+	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(resourceName, metav1.GetOptions{}); err != nil {
+		if !kerr.IsNotFound(err) {
 			log.Fatalln(err)
 		}
 	} else {
 		return
 	}
 
-	thirdPartyResource := &extensions.ThirdPartyResource{
-		TypeMeta: unversioned.TypeMeta{
-			APIVersion: "extensions/v1beta1",
-			Kind:       "ThirdPartyResource",
-		},
-		ObjectMeta: kapi.ObjectMeta{
+	crd := &extensionsobj.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: resourceName,
+			Labels: map[string]string{
+				"app": "kubedb",
+			},
 		},
-		Versions: []extensions.APIVersion{
-			{
-				Name: tapi.V1beta1SchemeGroupVersion.Version,
+		Spec: extensionsobj.CustomResourceDefinitionSpec{
+			Group:   tapi.SchemeGroupVersion.Group,
+			Version: tapi.SchemeGroupVersion.Version,
+			Scope:   extensionsobj.NamespaceScoped,
+			Names: extensionsobj.CustomResourceDefinitionNames{
+				Plural:     tapi.ResourceTypePostgres,
+				Kind:       tapi.ResourceKindPostgres,
+				ShortNames: []string{tapi.ResourceCodePostgres},
 			},
 		},
 	}
 
-	if _, err := c.Client.Extensions().ThirdPartyResources().Create(thirdPartyResource); err != nil {
+	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil {
 		log.Fatalln(err)
+	}
+}
+
+func (c *Controller) pushFailureEvent(postgres *tapi.Postgres, reason string) {
+	c.recorder.Eventf(
+		postgres.ObjectReference(),
+		apiv1.EventTypeWarning,
+		eventer.EventReasonFailedToStart,
+		`Fail to be ready Postgres: "%v". Reason: %v`,
+		postgres.Name,
+		reason,
+	)
+
+	_, err := kutildb.TryPatchPostgres(c.ExtClient, postgres.ObjectMeta, func(in *tapi.Postgres) *tapi.Postgres {
+		in.Status.Phase = tapi.DatabasePhaseFailed
+		in.Status.Reason = reason
+		return in
+	})
+	if err != nil {
+		c.recorder.Eventf(postgres.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 	}
 }
