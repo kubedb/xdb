@@ -1,12 +1,11 @@
 package kutil
 
 import (
-	"reflect"
-	"time"
-
 	"github.com/hashicorp/go-version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	"reflect"
+	"time"
 )
 
 const (

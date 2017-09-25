@@ -139,6 +139,54 @@ func (e Elasticsearch) ResourceType() string {
 	return ResourceTypeElasticsearch
 }
 
+func (p Xdb) OffshootName() string {
+	return p.Name
+}
+
+func (p Xdb) OffshootLabels() map[string]string {
+	return map[string]string{
+		LabelDatabaseName: p.Name,
+		LabelDatabaseKind: ResourceKindXdb,
+	}
+}
+
+func (p Xdb) StatefulSetLabels() map[string]string {
+	labels := p.OffshootLabels()
+	for key, val := range p.Labels {
+		if !strings.HasPrefix(key, GenericKey+"/") && !strings.HasPrefix(key, XdbKey+"/") {
+			labels[key] = val
+		}
+	}
+	return labels
+}
+
+func (p Xdb) StatefulSetAnnotations() map[string]string {
+	annotations := make(map[string]string)
+	for key, val := range p.Annotations {
+		if !strings.HasPrefix(key, GenericKey+"/") && !strings.HasPrefix(key, XdbKey+"/") {
+			annotations[key] = val
+		}
+	}
+	annotations[XdbDatabaseVersion] = string(p.Spec.Version)
+	return annotations
+}
+
+func (p Xdb) ResourceCode() string {
+	return ResourceCodeXdb
+}
+
+func (p Xdb) ResourceKind() string {
+	return ResourceKindXdb
+}
+
+func (p Xdb) ResourceName() string {
+	return ResourceNameXdb
+}
+
+func (p Xdb) ResourceType() string {
+	return ResourceTypeXdb
+}
+
 func (d DormantDatabase) OffshootName() string {
 	return d.Name
 }
@@ -223,52 +271,4 @@ func (s SnapshotStorageSpec) Location() (string, error) {
 		return "swift:" + s.Swift.Container, nil
 	}
 	return "", errors.New("No storage provider is configured.")
-}
-
-func (p Xdb) OffshootName() string {
-	return p.Name
-}
-
-func (p Xdb) OffshootLabels() map[string]string {
-	return map[string]string{
-		LabelDatabaseName: p.Name,
-		LabelDatabaseKind: ResourceKindXdb,
-	}
-}
-
-func (p Xdb) StatefulSetLabels() map[string]string {
-	labels := p.OffshootLabels()
-	for key, val := range p.Labels {
-		if !strings.HasPrefix(key, GenericKey+"/") && !strings.HasPrefix(key, XdbKey+"/") {
-			labels[key] = val
-		}
-	}
-	return labels
-}
-
-func (p Xdb) StatefulSetAnnotations() map[string]string {
-	annotations := make(map[string]string)
-	for key, val := range p.Annotations {
-		if !strings.HasPrefix(key, GenericKey+"/") && !strings.HasPrefix(key, XdbKey+"/") {
-			annotations[key] = val
-		}
-	}
-	annotations[XdbDatabaseVersion] = string(p.Spec.Version)
-	return annotations
-}
-
-func (p Xdb) ResourceCode() string {
-	return ResourceCodeXdb
-}
-
-func (p Xdb) ResourceKind() string {
-	return ResourceKindXdb
-}
-
-func (p Xdb) ResourceName() string {
-	return ResourceNameXdb
-}
-
-func (p Xdb) ResourceType() string {
-	return ResourceTypeXdb
 }

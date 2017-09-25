@@ -38,10 +38,10 @@ func (e Elasticsearch) ObjectReference() *apiv1.ObjectReference {
 	}
 }
 
-func (s Snapshot) ObjectReference() *apiv1.ObjectReference {
+func (s Xdb) ObjectReference() *apiv1.ObjectReference {
 	return &apiv1.ObjectReference{
 		APIVersion:      SchemeGroupVersion.String(),
-		Kind:            ResourceKindSnapshot,
+		Kind:            ResourceKindXdb,
 		Namespace:       s.Namespace,
 		Name:            s.Name,
 		UID:             s.UID,
@@ -49,10 +49,10 @@ func (s Snapshot) ObjectReference() *apiv1.ObjectReference {
 	}
 }
 
-func (s Xdb) ObjectReference() *apiv1.ObjectReference {
+func (s Snapshot) ObjectReference() *apiv1.ObjectReference {
 	return &apiv1.ObjectReference{
 		APIVersion:      SchemeGroupVersion.String(),
-		Kind:            ResourceKindXdb,
+		Kind:            ResourceKindSnapshot,
 		Namespace:       s.Namespace,
 		Name:            s.Name,
 		UID:             s.UID,

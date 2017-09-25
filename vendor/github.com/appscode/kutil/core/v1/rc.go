@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	. "github.com/appscode/go/types"
+	"github.com/appscode/jsonpatch"
 	"github.com/appscode/kutil"
 	"github.com/golang/glog"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
@@ -41,15 +41,19 @@ func PatchRC(c clientset.Interface, cur *apiv1.ReplicationController, transform 
 		return nil, err
 	}
 
-	patch, err := strategicpatch.CreateTwoWayMergePatch(curJson, modJson, apiv1.ReplicationController{})
+	patch, err := jsonpatch.CreatePatch(curJson, modJson)
 	if err != nil {
 		return nil, err
 	}
-	if len(patch) == 0 || string(patch) == "{}" {
+	if len(patch) == 0 {
 		return cur, nil
 	}
-	glog.V(5).Infof("Patching ReplicationController %s@%s with %s.", cur.Name, cur.Namespace, string(patch))
-	return c.CoreV1().ReplicationControllers(cur.Namespace).Patch(cur.Name, types.StrategicMergePatchType, patch)
+	pb, err := json.MarshalIndent(patch, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	glog.V(5).Infof("Patching ReplicationController %s@%s with %s.", cur.Name, cur.Namespace, string(pb))
+	return c.CoreV1().ReplicationControllers(cur.Namespace).Patch(cur.Name, types.JSONPatchType, pb)
 }
 
 func TryPatchRC(c clientset.Interface, meta metav1.ObjectMeta, transform func(*apiv1.ReplicationController) *apiv1.ReplicationController) (result *apiv1.ReplicationController, err error) {
@@ -68,7 +72,7 @@ func TryPatchRC(c clientset.Interface, meta metav1.ObjectMeta, transform func(*a
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to patch ReplicationController %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to patch ReplicationController %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }
@@ -89,7 +93,7 @@ func TryUpdateRC(c clientset.Interface, meta metav1.ObjectMeta, transform func(*
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to update ReplicationController %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to update ReplicationController %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }
