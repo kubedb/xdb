@@ -81,8 +81,8 @@ func New(
 }
 
 // Blocks caller. Intended to be called as a Go routine.
-func (c *Controller) RunAndHold() {
-	// Ensure x  TPR
+func (c *Controller) Run() {
+	// Ensure Xdb TPR
 	c.ensureCustomResourceDefinition()
 
 	// Start Cron
@@ -91,16 +91,26 @@ func (c *Controller) RunAndHold() {
 	defer c.cronController.StopCron()
 
 	// Watch x  TPR objects
-	go c.watchx()
-	// Watch DatabaseSnapshot with labelSelector only for x
+	go c.watchXdb()
+	// Watch DatabaseSnapshot with labelSelector only for Xdb
 	go c.watchDatabaseSnapshot()
-	// Watch DeletedDatabase with labelSelector only for x
+	// Watch DeletedDatabase with labelSelector only for Xdb
 	go c.watchDeletedDatabase()
 	// hold
 	hold.Hold()
 }
 
-func (c *Controller) watchx() {
+// Blocks caller. Intended to be called as a Go routine.
+func (c *Controller) RunAndHold() {
+	c.Run()
+
+	// Run HTTP server to expose metrics, audit endpoint & debug profiles.
+	go c.runHTTPServer()
+	// hold
+	hold.Hold()
+}
+
+func (c *Controller) watchXdb() {
 	lw := &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 			return c.ExtClient.Xdbs(metav1.NamespaceAll).List(metav1.ListOptions{})
@@ -117,12 +127,20 @@ func (c *Controller) watchx() {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				xdb := obj.(*tapi.Xdb)
+				kutildb.AssignTypeKind(xdb)
 				if xdb.Status.CreationTime == nil {
-					c.create(xdb)
+					if err := c.create(xdb); err != nil {
+						log.Errorln(err)
+						c.pushFailureEvent(xdb, err.Error())
+					}
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				c.delete(obj.(*tapi.Xdb))
+				xdb := obj.(*tapi.Xdb)
+				kutildb.AssignTypeKind(xdb)
+				if err := c.pause(xdb); err != nil {
+					log.Errorln(err)
+				}
 			},
 			UpdateFunc: func(old, new interface{}) {
 				oldObj, ok := old.(*tapi.Xdb)
@@ -133,8 +151,12 @@ func (c *Controller) watchx() {
 				if !ok {
 					return
 				}
+				kutildb.AssignTypeKind(oldObj)
+				kutildb.AssignTypeKind(newObj)
 				if !reflect.DeepEqual(oldObj.Spec, newObj.Spec) {
-					c.update(oldObj, newObj)
+					if err := c.update(oldObj, newObj); err != nil {
+						log.Errorln(err)
+					}
 				}
 			},
 		},
