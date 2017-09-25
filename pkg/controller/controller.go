@@ -22,6 +22,8 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	apiv1 "k8s.io/client-go/pkg/api/v1"
+	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
 )
 
 type Options struct {
@@ -72,7 +74,7 @@ func New(
 		ApiExtKubeClient: apiExtKubeClient,
 		promClient:       promClient,
 		cronController:   cronController,
-		recorder:         eventer.NewEventRecorder(client, "Postgres operator"),
+		recorder:         eventer.NewEventRecorder(client, "Xdb operator"),
 		opt:              opt,
 		syncPeriod:       time.Minute * 2,
 	}
@@ -114,9 +116,9 @@ func (c *Controller) watchx() {
 		c.syncPeriod,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				postgres := obj.(*tapi.Xdb)
-				if postgres.Status.CreationTime == nil {
-					c.create(postgres)
+				xdb := obj.(*tapi.Xdb)
+				if xdb.Status.CreationTime == nil {
+					c.create(xdb)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
@@ -189,7 +191,7 @@ func (c *Controller) watchDeletedDatabase() {
 func (c *Controller) ensureCustomResourceDefinition() {
 	log.Infoln("Ensuring CustomResourceDefinition...")
 
-	resourceName := tapi.ResourceTypePostgres + "." + tapi.SchemeGroupVersion.Group
+	resourceName := tapi.ResourceTypeXdb + "." + tapi.SchemeGroupVersion.Group
 	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(resourceName, metav1.GetOptions{}); err != nil {
 		if !kerr.IsNotFound(err) {
 			log.Fatalln(err)
@@ -210,14 +212,34 @@ func (c *Controller) ensureCustomResourceDefinition() {
 			Version: tapi.SchemeGroupVersion.Version,
 			Scope:   extensionsobj.NamespaceScoped,
 			Names: extensionsobj.CustomResourceDefinitionNames{
-				Plural:     tapi.ResourceTypePostgres,
-				Kind:       tapi.ResourceKindPostgres,
-				ShortNames: []string{tapi.ResourceCodePostgres},
+				Plural:     tapi.ResourceTypeXdb,
+				Kind:       tapi.ResourceKindXdb,
+				ShortNames: []string{tapi.ResourceCodeXdb},
 			},
 		},
 	}
 
 	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil {
 		log.Fatalln(err)
+	}
+}
+
+func (c *Controller) pushFailureEvent(xdb *tapi.Xdb, reason string) {
+	c.recorder.Eventf(
+		xdb.ObjectReference(),
+		apiv1.EventTypeWarning,
+		eventer.EventReasonFailedToStart,
+		`Fail to be ready Xdb: "%v". Reason: %v`,
+		xdb.Name,
+		reason,
+	)
+
+	_, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
+		in.Status.Phase = tapi.DatabasePhaseFailed
+		in.Status.Reason = reason
+		return in
+	})
+	if err != nil {
+		c.recorder.Eventf(xdb.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 	}
 }
