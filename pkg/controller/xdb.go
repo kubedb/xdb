@@ -1,20 +1,21 @@
 package controller
 
 import (
-	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
-	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"encoding/json"
+	"errors"
 	"fmt"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	"reflect"
+	"time"
+
+	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
+	"github.com/appscode/log"
+	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
+	"github.com/k8sdb/apimachinery/pkg/storage"
 	"github.com/k8sdb/xdb/pkg/validator"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
-	"errors"
-	"encoding/json"
-	"reflect"
-	"github.com/k8sdb/apimachinery/pkg/storage"
-	"time"
-	"github.com/appscode/log"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiv1 "k8s.io/client-go/pkg/api/v1"
 )
 
 func (c *Controller) create(xdb *tapi.Xdb) error {
@@ -182,19 +183,29 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 	}
 
 	// Check Origin Spec
-	drmnOriginSpec := dormantDb.Spec.Origin.Spec.Xdb
+	// Uncomment following line
+	/*
+		drmnOriginSpec := dormantDb.Spec.Origin.Spec.Xdb
+	*/
 	originalSpec := xdb.Spec
 	originalSpec.Init = nil
 
+	// ---> Start
+	// Use following part if database secret is supported
+	// Otherwise, remove it
 	if originalSpec.DatabaseSecret == nil {
 		originalSpec.DatabaseSecret = &apiv1.SecretVolumeSource{
 			SecretName: xdb.Name + "-admin-auth",
 		}
 	}
+	// ---> End
 
-	if !reflect.DeepEqual(drmnOriginSpec, &originalSpec) {
-		return sendEvent("Xdb spec mismatches with OriginSpec in DormantDatabases")
-	}
+	// Uncomment following line
+	/*
+		if !reflect.DeepEqual(drmnOriginSpec, &originalSpec) {
+			return sendEvent("Xdb spec mismatches with OriginSpec in DormantDatabases")
+		}
+	*/
 
 	return true, nil
 }
@@ -314,7 +325,6 @@ func (c *Controller) ensureBackupScheduler(xdb *tapi.Xdb) {
 		c.cronController.StopBackupScheduling(xdb.ObjectMeta)
 	}
 }
-
 
 const (
 	durationCheckRestoreJob = time.Minute * 30

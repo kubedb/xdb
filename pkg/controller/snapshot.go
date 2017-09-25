@@ -92,10 +92,7 @@ func (c *Controller) GetSnapshotter(snapshot *tapi.Snapshot) (*batch.Job, error)
 							},
 							Resources: snapshot.Spec.Resources,
 							VolumeMounts: []apiv1.VolumeMount{
-								{
-									Name:      "secret",
-									MountPath: "/srv/" + tapi.ResourceNameXdb + "/secrets",
-								},
+								// Add Secret volume if necessary
 								{
 									Name:      persistentVolume.Name,
 									MountPath: "/var/" + snapshotType_DumpBackup + "/",
@@ -109,14 +106,8 @@ func (c *Controller) GetSnapshotter(snapshot *tapi.Snapshot) (*batch.Job, error)
 						},
 					},
 					Volumes: []apiv1.Volume{
-						{
-							Name: "secret",
-							VolumeSource: apiv1.VolumeSource{
-								Secret: &apiv1.SecretVolumeSource{
-									SecretName: xdb.Spec.DatabaseSecret.SecretName,
-								},
-							},
-						},
+						// Add secret volume if necessary
+						// Check postgres repository for example
 						{
 							Name:         persistentVolume.Name,
 							VolumeSource: persistentVolume.VolumeSource,

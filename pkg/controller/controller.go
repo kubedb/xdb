@@ -6,6 +6,7 @@ import (
 
 	"github.com/appscode/go/hold"
 	"github.com/appscode/go/log"
+	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
 	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1alpha1"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	tcs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
@@ -20,10 +21,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
+	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
-	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
 )
 
 type Options struct {
@@ -166,7 +166,7 @@ func (c *Controller) watchXdb() {
 
 func (c *Controller) watchDatabaseSnapshot() {
 	labelMap := map[string]string{
-		tapi.LabelDatabaseKind: tapi.ResourceNameXdb,
+		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{
@@ -189,7 +189,7 @@ func (c *Controller) watchDatabaseSnapshot() {
 
 func (c *Controller) watchDeletedDatabase() {
 	labelMap := map[string]string{
-		tapi.LabelDatabaseKind: tapi.ResourceNameXdb,
+		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{

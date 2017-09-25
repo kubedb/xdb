@@ -1,5 +1,5 @@
 hash: 95d27040655eda56a40a3f19e97724c8d95638378df9673f22ae260c19ee80db
-updated: 2017-09-25T12:20:12.855434037+06:00
+updated: 2017-09-25T14:34:11.395946984+06:00
 imports:
 - name: cloud.google.com/go
   version: fe3d41e1ecb2ce36ad3a979037c9b9a2b726226f
@@ -10,7 +10,6 @@ imports:
   version: 5f5a94d551a6a3147a2dfc5e287da0fc251b1bac
   subpackages:
   - context
-  - crypto/rand
   - encoding/json/types
   - encoding/yaml
   - hold
@@ -154,9 +153,9 @@ imports:
 - name: github.com/google/gofuzz
   version: 44d81051d367757e1c7c6a5a86423ece9afcf63c
 - name: github.com/gorilla/context
-  version: 215affda49addc4c8ef7e2534915df2c8c35c6cd
+  version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
-  version: 8096f47503459bcc74d1f4c487b7e6e42e5746b5
+  version: 0a192a193177452756c362c20087ddafcf6829c4
 - name: github.com/graymeta/stow
   version: 6f2b8867a3fb15cca5507da1d552b55cfe5d07a7
   repo: https://github.com/appscode/stow.git
@@ -186,13 +185,13 @@ imports:
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 - name: github.com/jmespath/go-jmespath
-  version: 3433f3ea46d9f8019119e7dd41274e112a2359a9
+  version: 0b12d6b521d83fc7f755e7cfc1b1fbdd35a01a74
 - name: github.com/jpillora/go-ogle-analytics
   version: 14b04e0594ef6a9fd943363b135656f0ec8c9d0e
 - name: github.com/juju/ratelimit
   version: 5b9ff866471762aa2ab2dced63c9fb6f53921342
 - name: github.com/k8sdb/apimachinery
-  version: 5ccd67ba579db7d78589fb4d2b5a441653790dc0
+  version: 8efba92128d178ec83c85ceb11a3a3b747da9a49
   subpackages:
   - apis/kubedb
   - apis/kubedb/v1alpha1
@@ -479,13 +478,6 @@ imports:
   - util/flowcontrol
   - util/homedir
   - util/integer
-- name: k8s.io/kubernetes
-  version: d3faa3f8f2e85c8089e80a661955626ae24abf80
-  subpackages:
-  - pkg/api
-  - pkg/api/errors
-  - pkg/labels
-  - pkg/util/runtime
 testImports:
 - name: github.com/stretchr/testify
   version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0

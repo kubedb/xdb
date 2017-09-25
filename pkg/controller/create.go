@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/appscode/go/crypto/rand"
 	"github.com/appscode/go/log"
 	"github.com/appscode/go/types"
 	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
@@ -53,7 +52,9 @@ func (c *Controller) createService(xdb *tapi.Xdb) error {
 			Labels: xdb.OffshootLabels(),
 		},
 		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{},
+			Ports: []apiv1.ServicePort{
+			// Use appropriate port for your service
+			},
 			Selector: xdb.OffshootLabels(),
 		},
 	}
@@ -111,10 +112,13 @@ func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error)
 				Spec: apiv1.PodSpec{
 					Containers: []apiv1.Container{
 						{
-							Name:            tapi.ResourceNameXdb,
+							Name: tapi.ResourceNameXdb,
+							// Use correct image. Its a template
 							Image:           fmt.Sprintf("%s:%s", docker.ImageXdb, xdb.Spec.Version),
 							ImagePullPolicy: apiv1.PullIfNotPresent,
-							Ports: []apiv1.ContainerPort{},
+							Ports:           []apiv1.ContainerPort{
+							// Use appropriate port for your container
+							},
 							Resources: xdb.Spec.Resources,
 							VolumeMounts: []apiv1.VolumeMount{
 								// Add Secret volume if necessary
@@ -123,7 +127,7 @@ func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error)
 									MountPath: "/var/pv",
 								},
 							},
-							Args: []string{/*Add args if necessary*/},
+							Args: []string{ /*Add args if necessary*/ },
 						},
 					},
 					NodeSelector:  xdb.Spec.NodeSelector,
@@ -158,8 +162,9 @@ func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error)
 		statefulSet.Spec.Template.Spec.Containers = append(statefulSet.Spec.Template.Spec.Containers, exporter)
 	}
 
-	// -------> Start
-	// Use following if secret is necessary, otherwise remove
+	// ---> Start
+	// Use following if secret is necessary
+	// otherwise remove
 	if xdb.Spec.DatabaseSecret == nil {
 		secretVolumeSource, err := c.createDatabaseSecret(xdb)
 		if err != nil {
@@ -179,19 +184,20 @@ func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error)
 
 	// Add secretVolume for authentication
 	addSecretVolume(statefulSet, xdb.Spec.DatabaseSecret)
-	// -------- > End
-
+	// --- > End
 
 	// Add Data volume for StatefulSet
 	addDataVolume(statefulSet, xdb.Spec.Storage)
 
-	// -------> Start
-	// Use following if secret is necessary, otherwise remove
+	// ---> Start
+	// Use following if supported
+	// otherwise remove
+
 	// Add InitialScript to run at startup
 	if xdb.Spec.Init != nil && xdb.Spec.Init.ScriptSource != nil {
 		addInitialScript(statefulSet, xdb.Spec.Init.ScriptSource)
 	}
-	// -------- > End
+	// ---> End
 
 	if c.opt.EnableRbac {
 		// Ensure ClusterRoles for database statefulsets
@@ -225,7 +231,9 @@ func (c *Controller) findSecret(secretName, namespace string) (bool, error) {
 	return true, nil
 }
 
-// Use this method to create secret dynamically. otherwise remove this method
+// ---> start
+// Use this method to create secret dynamically
+// otherwise remove this method
 func (c *Controller) createDatabaseSecret(xdb *tapi.Xdb) (*apiv1.SecretVolumeSource, error) {
 	authSecretName := xdb.Name + "-admin-auth"
 
@@ -256,7 +264,11 @@ func (c *Controller) createDatabaseSecret(xdb *tapi.Xdb) (*apiv1.SecretVolumeSou
 	}, nil
 }
 
-// Use this method to add secret volume. otherwise remove this method
+// ---> End
+
+// ---> Start
+// Use this method to add secret volume
+// otherwise remove this method
 func addSecretVolume(statefulSet *apps.StatefulSet, secretVolume *apiv1.SecretVolumeSource) error {
 	statefulSet.Spec.Template.Spec.Volumes = append(statefulSet.Spec.Template.Spec.Volumes,
 		apiv1.Volume{
@@ -268,6 +280,8 @@ func addSecretVolume(statefulSet *apps.StatefulSet, secretVolume *apiv1.SecretVo
 	)
 	return nil
 }
+
+// ---> End
 
 func addDataVolume(statefulSet *apps.StatefulSet, pvcSpec *apiv1.PersistentVolumeClaimSpec) {
 	if pvcSpec != nil {
@@ -304,6 +318,9 @@ func addDataVolume(statefulSet *apps.StatefulSet, pvcSpec *apiv1.PersistentVolum
 	}
 }
 
+// ---> Start
+// Use this method to add initial script, if supported
+// Otherwise, remove it
 func addInitialScript(statefulSet *apps.StatefulSet, script *tapi.ScriptSourceSpec) {
 	statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts,
 		apiv1.VolumeMount{
@@ -312,7 +329,7 @@ func addInitialScript(statefulSet *apps.StatefulSet, script *tapi.ScriptSourceSp
 		},
 	)
 	statefulSet.Spec.Template.Spec.Containers[0].Args = []string{
-	    // Add additional args
+		// Add additional args
 		script.ScriptPath,
 	}
 
@@ -323,6 +340,8 @@ func addInitialScript(statefulSet *apps.StatefulSet, script *tapi.ScriptSourceSp
 		},
 	)
 }
+
+// ---> End
 
 func (c *Controller) createDormantDatabase(xdb *tapi.Xdb) (*tapi.DormantDatabase, error) {
 	dormantDb := &tapi.DormantDatabase{
@@ -342,7 +361,10 @@ func (c *Controller) createDormantDatabase(xdb *tapi.Xdb) (*tapi.DormantDatabase
 					Annotations: xdb.Annotations,
 				},
 				Spec: tapi.OriginSpec{
+				// Uncomment following
+				/*
 					Xdb: &xdb.Spec,
+				*/
 				},
 			},
 		},
@@ -354,7 +376,11 @@ func (c *Controller) createDormantDatabase(xdb *tapi.Xdb) (*tapi.DormantDatabase
 			tapi.XdbInitSpec: string(initSpec),
 		}
 	}
-	dormantDb.Spec.Origin.Spec.Xdb.Init = nil
+
+	// Uncomment following
+	/*
+		dormantDb.Spec.Origin.Spec.Xdb.Init = nil
+	*/
 
 	return c.ExtClient.DormantDatabases(dormantDb.Namespace).Create(dormantDb)
 }
@@ -418,8 +444,9 @@ func (c *Controller) createRestoreJob(xdb *tapi.Xdb, snapshot *tapi.Snapshot) (*
 				Spec: apiv1.PodSpec{
 					Containers: []apiv1.Container{
 						{
-							Name:  SnapshotProcess_Restore,
-							Image: fmt.Sprintf("%s:%s-util", docker.ImageXdb, xdb.Spec.Version),
+							Name: SnapshotProcess_Restore,
+							// Use appropriate image
+							Image: fmt.Sprintf("%s:%s", docker.ImageXdb, xdb.Spec.Version),
 							Args: []string{
 								fmt.Sprintf(`--process=%s`, SnapshotProcess_Restore),
 								fmt.Sprintf(`--host=%s`, databaseName),
@@ -429,10 +456,7 @@ func (c *Controller) createRestoreJob(xdb *tapi.Xdb, snapshot *tapi.Snapshot) (*
 							},
 							Resources: snapshot.Spec.Resources,
 							VolumeMounts: []apiv1.VolumeMount{
-								{
-									Name:      "secret",
-									MountPath: "/srv/" + tapi.ResourceNameXdb + "/secrets",
-								},
+								// Mount secret volume if necessary
 								{
 									Name:      persistentVolume.Name,
 									MountPath: "/var/" + snapshotType_DumpRestore + "/",
@@ -446,14 +470,8 @@ func (c *Controller) createRestoreJob(xdb *tapi.Xdb, snapshot *tapi.Snapshot) (*
 						},
 					},
 					Volumes: []apiv1.Volume{
-						{
-							Name: "secret",
-							VolumeSource: apiv1.VolumeSource{
-								Secret: &apiv1.SecretVolumeSource{
-									SecretName: xdb.Spec.DatabaseSecret.SecretName,
-								},
-							},
-						},
+						// Add secret volume if necessary
+						// Check postgres repository for example
 						{
 							Name:         persistentVolume.Name,
 							VolumeSource: persistentVolume.VolumeSource,
