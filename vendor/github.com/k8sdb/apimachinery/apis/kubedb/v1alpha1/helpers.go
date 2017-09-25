@@ -219,3 +219,19 @@ func (s SnapshotStorageSpec) Location() (string, error) {
 	}
 	return "", errors.New("No storage provider is configured.")
 }
+
+func (s Xdb) ResourceCode() string {
+	return ResourceCodeXdb
+}
+
+func (s Xdb) ResourceKind() string {
+	return ResourceKindXdb
+}
+
+func (s Xdb) ResourceName() string {
+	return ResourceNameXdb
+}
+
+func (s Xdb) ResourceType() string {
+	return ResourceTypeXdb
+}
