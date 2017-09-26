@@ -5,6 +5,7 @@ from __future__ import absolute_import
 
 import datetime
 import fnmatch
+import glob
 import io
 import json
 import os
@@ -37,6 +38,8 @@ def _goenv():
 
 
 GOENV = _goenv()
+GOPATH = GOENV["GOPATH"]
+GOBIN = GOENV["GOPATH"] + '/bin'
 GOHOSTOS = GOENV["GOHOSTOS"]
 GOHOSTARCH = GOENV["GOHOSTARCH"]
 GOC = 'go'
@@ -59,7 +62,7 @@ def metadata(cwd, goos='', goarch=''):
     if md['git_tag']:
         md['version'] = md['git_tag']
         md['version_strategy'] = 'tag'
-    elif not md['git_branch'] in ['master', 'HEAD']:
+    elif not md['git_branch'] in ['master', 'HEAD'] and not md['git_branch'].startswith('release-'):
         md['version'] = md['git_branch']
         md['version_strategy'] = 'branch'
     else:
@@ -150,7 +153,13 @@ def to_upper_camel(lower_snake):
 def go_build(name, goos, goarch, main):
     linker_opts = []
     if BIN_MATRIX[name].get('go_version', False):
-        for k, v in metadata(REPO_ROOT, goos, goarch).items():
+        md = metadata(REPO_ROOT, goos, goarch)
+        if md['version_strategy'] == 'tag':
+            del md['build_timestamp']
+            del md['build_host']
+            del md['build_host_os']
+            del md['build_host_arch']
+        for k, v in md.items():
             linker_opts.append('-X')
             linker_opts.append('main.' + to_upper_camel(k) + '=' + v)
 
@@ -168,18 +177,37 @@ def go_build(name, goos, goarch, main):
     bindir = 'dist/{name}'.format(name=name)
     if not os.path.isdir(bindir):
         os.makedirs(bindir)
-    cmd = "GOOS={goos} GOARCH={goarch} {cgo_env} {goc} build -o {bindir}/{name}-{goos}-{goarch}{ext} {cgo} {ldflags} {main}".format(
-        name=name,
-        goc=GOC,
-        goos=goos,
-        goarch=goarch,
-        bindir=bindir,
-        cgo_env=cgo_env,
-        cgo=cgo,
-        ldflags=ldflags,
-        ext='.exe' if goos == 'windows' else '',
-        main=main
-    )
+    if goos == 'alpine':
+        repo_dir = REPO_ROOT[len(GOPATH):]
+        uid = check_output('id -u').strip()
+        cmd = "docker run --rm -ti -u {uid} -v {repo_root}:/go{repo_dir} -w /go{repo_dir} -e {cgo_env} golang:1.8.3-alpine {goc} build -o {bindir}/{name}-{goos}-{goarch}{ext} {cgo} {ldflags} {main}".format(
+            repo_root=REPO_ROOT,
+            repo_dir=repo_dir,
+            uid=uid,
+            name=name,
+            goc=GOC,
+            goos=goos,
+            goarch=goarch,
+            bindir=bindir,
+            cgo_env=cgo_env,
+            cgo=cgo,
+            ldflags=ldflags,
+            ext='.exe' if goos == 'windows' else '',
+            main=main
+        )
+    else:
+        cmd = "GOOS={goos} GOARCH={goarch} {cgo_env} {goc} build -o {bindir}/{name}-{goos}-{goarch}{ext} {cgo} {ldflags} {main}".format(
+            name=name,
+            goc=GOC,
+            goos=goos,
+            goarch=goarch,
+            bindir=bindir,
+            cgo_env=cgo_env,
+            cgo=cgo,
+            ldflags=ldflags,
+            ext='.exe' if goos == 'windows' else '',
+            main=main
+        )
     die(call(cmd, cwd=REPO_ROOT))
     print('')
 
@@ -196,12 +224,11 @@ def upload_to_cloud(folder, f, version):
     if not isinstance(buckets, dict):
         buckets = {buckets: ''}
     for bucket, region in buckets.items():
-        dst = "{bucket}/binaries/{name}/{version}/{file}{ext}".format(
+        dst = "{bucket}/binaries/{name}/{version}/{file}".format(
             bucket=bucket,
             name=name,
             version=version,
-            file=f,
-            ext='.exe' if '-windows-' in f else ''
+            file=f
         )
         if bucket.startswith('gs://'):
             upload_to_gcs(folder, f, dst, BIN_MATRIX[name].get('release', False))
@@ -256,6 +283,10 @@ def ungroup_go_imports(*paths):
             for dir, _, files in os.walk(p):
                 for f in fnmatch.filter(files, '*.go'):
                     _ungroup_go_imports(dir + '/' + f)
+        else:
+            for f in glob.glob(p):
+                print('Ungrouping imports of file: ' + f)
+                _ungroup_go_imports(f)
 
 
 BEGIN_IMPORT_REGEX = ur'import \(\s*'
