@@ -4,17 +4,17 @@
 
 [Website](https://appscode.com) • [Slack](https://slack.appscode.com) • [Twitter](https://twitter.com/AppsCodeHQ)
 
-# x
-Run x in Kubernetes
+## How to use
+* Change all `xdb` in a string to your database type
+* Rename methods if necessary
+* Change all `const` to use your database resource
+    * tapi.ResourceKindXdb
+    * tapi.ResourceTypeXdb
+    * tapi.ResourceNameXdb
+    * tapi.ResourceCodeXdb
+* Fix all `@TODO` to support your resource
+* Change variable name, if necessary
 
-## Installation
-To install KubeDB, please follow the guide [here](https://github.com/k8sdb/cli/blob/master/docs/install.md).
-
-## Using KubeDB
-Want to learn how to use KubeDB? Please start [here](https://github.com/k8sdb/cli/blob/master/docs/tutorials/README.md).
-
-## Contribution guidelines
-Want to help improve KubeDB? Please start [here](https://github.com/k8sdb/cli/blob/master/CONTRIBUTING.md).
 
 ## Support
 If you have any questions, you can reach out to us.

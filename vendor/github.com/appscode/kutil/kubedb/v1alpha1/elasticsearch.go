@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/appscode/jsonpatch"
 	"github.com/appscode/kutil"
 	"github.com/golang/glog"
 	aci "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
@@ -11,7 +12,6 @@ import (
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -40,15 +40,19 @@ func PatchElasticsearch(c tcs.KubedbV1alpha1Interface, cur *aci.Elasticsearch, t
 		return nil, err
 	}
 
-	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJson, modJson, curJson)
+	patch, err := jsonpatch.CreatePatch(curJson, modJson)
 	if err != nil {
 		return nil, err
 	}
-	if len(patch) == 0 || string(patch) == "{}" {
+	if len(patch) == 0 {
 		return cur, nil
 	}
-	glog.V(5).Infof("Patching Elasticsearch %s@%s with %s.", cur.Name, cur.Namespace, string(patch))
-	result, err := c.Elasticsearchs(cur.Namespace).Patch(cur.Name, types.MergePatchType, patch)
+	pb, err := json.MarshalIndent(patch, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	glog.V(5).Infof("Patching Elasticsearch %s@%s with %s.", cur.Name, cur.Namespace, string(pb))
+	result, err := c.Elasticsearchs(cur.Namespace).Patch(cur.Name, types.JSONPatchType, pb)
 	return result, err
 }
 
@@ -68,7 +72,7 @@ func TryPatchElasticsearch(c tcs.KubedbV1alpha1Interface, meta metav1.ObjectMeta
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to patch Elasticsearch %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to patch Elasticsearch %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }
@@ -89,7 +93,7 @@ func TryUpdateElasticsearch(c tcs.KubedbV1alpha1Interface, meta metav1.ObjectMet
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to update Elasticsearch %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to update Elasticsearch %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }

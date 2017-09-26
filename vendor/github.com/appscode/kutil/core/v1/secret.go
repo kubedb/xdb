@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/appscode/jsonpatch"
 	"github.com/appscode/kutil"
 	"github.com/golang/glog"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
@@ -40,15 +40,19 @@ func PatchSecret(c clientset.Interface, cur *apiv1.Secret, transform func(*apiv1
 		return nil, err
 	}
 
-	patch, err := strategicpatch.CreateTwoWayMergePatch(curJson, modJson, apiv1.Secret{})
+	patch, err := jsonpatch.CreatePatch(curJson, modJson)
 	if err != nil {
 		return nil, err
 	}
-	if len(patch) == 0 || string(patch) == "{}" {
+	if len(patch) == 0 {
 		return cur, nil
 	}
+	pb, err := json.MarshalIndent(patch, "", "  ")
+	if err != nil {
+		return nil, err
+	}
 	glog.V(5).Infof("Patching Secret %s@%s.", cur.Name, cur.Namespace)
-	return c.CoreV1().Secrets(cur.Namespace).Patch(cur.Name, types.StrategicMergePatchType, patch)
+	return c.CoreV1().Secrets(cur.Namespace).Patch(cur.Name, types.JSONPatchType, pb)
 }
 
 func TryPatchSecret(c clientset.Interface, meta metav1.ObjectMeta, transform func(*apiv1.Secret) *apiv1.Secret) (result *apiv1.Secret, err error) {
@@ -67,7 +71,7 @@ func TryPatchSecret(c clientset.Interface, meta metav1.ObjectMeta, transform fun
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to patch Secret %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to patch Secret %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }
@@ -88,7 +92,7 @@ func TryUpdateSecret(c clientset.Interface, meta metav1.ObjectMeta, transform fu
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to update Secret %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to update Secret %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }

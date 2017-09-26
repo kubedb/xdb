@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/appscode/jsonpatch"
 	"github.com/appscode/kutil"
 	"github.com/golang/glog"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	rbac "k8s.io/client-go/pkg/apis/rbac/v1beta1"
@@ -40,15 +40,19 @@ func PatchRole(c clientset.Interface, cur *rbac.Role, transform func(*rbac.Role)
 		return nil, err
 	}
 
-	patch, err := strategicpatch.CreateTwoWayMergePatch(curJson, modJson, rbac.Role{})
+	patch, err := jsonpatch.CreatePatch(curJson, modJson)
 	if err != nil {
 		return nil, err
 	}
-	if len(patch) == 0 || string(patch) == "{}" {
+	if len(patch) == 0 {
 		return cur, nil
 	}
-	glog.V(5).Infof("Patching Role %s@%s with %s.", cur.Name, cur.Namespace, string(patch))
-	return c.RbacV1beta1().Roles(cur.Namespace).Patch(cur.Name, types.StrategicMergePatchType, patch)
+	pb, err := json.MarshalIndent(patch, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	glog.V(5).Infof("Patching Role %s@%s with %s.", cur.Name, cur.Namespace, string(pb))
+	return c.RbacV1beta1().Roles(cur.Namespace).Patch(cur.Name, types.JSONPatchType, pb)
 }
 
 func TryPatchRole(c clientset.Interface, meta metav1.ObjectMeta, transform func(*rbac.Role) *rbac.Role) (result *rbac.Role, err error) {
@@ -67,7 +71,7 @@ func TryPatchRole(c clientset.Interface, meta metav1.ObjectMeta, transform func(
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to patch Role %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to patch Role %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }
@@ -88,7 +92,7 @@ func TryUpdateRole(c clientset.Interface, meta metav1.ObjectMeta, transform func
 	})
 
 	if err != nil {
-		err = fmt.Errorf("failed to update Role %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
+		err = fmt.Errorf("Failed to update Role %s@%s after %d attempts due to %v", meta.Name, meta.Namespace, attempt, err)
 	}
 	return
 }

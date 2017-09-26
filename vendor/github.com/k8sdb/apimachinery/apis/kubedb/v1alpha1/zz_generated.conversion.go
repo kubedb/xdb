@@ -29,7 +29,6 @@ import (
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	api_v1 "k8s.io/client-go/pkg/api/v1"
-	api "k8s.io/kubernetes/pkg/api"
 )
 
 func init() {
@@ -1147,7 +1146,7 @@ func autoConvert_v1alpha1_XdbSpec_To_kubedb_XdbSpec(in *XdbSpec, out *kubedb.Xdb
 	out.Version = in.Version
 	out.Replicas = in.Replicas
 	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
-	out.DatabaseSecret = (*api.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
+	out.DatabaseSecret = (*api_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*kubedb.InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*kubedb.BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))
@@ -1169,7 +1168,7 @@ func autoConvert_kubedb_XdbSpec_To_v1alpha1_XdbSpec(in *kubedb.XdbSpec, out *Xdb
 	out.Version = in.Version
 	out.Replicas = in.Replicas
 	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
-	out.DatabaseSecret = (*api.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
+	out.DatabaseSecret = (*api_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))

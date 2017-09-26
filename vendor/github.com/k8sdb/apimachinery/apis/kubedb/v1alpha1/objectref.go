@@ -38,6 +38,17 @@ func (e Elasticsearch) ObjectReference() *apiv1.ObjectReference {
 	}
 }
 
+func (s Xdb) ObjectReference() *apiv1.ObjectReference {
+	return &apiv1.ObjectReference{
+		APIVersion:      SchemeGroupVersion.String(),
+		Kind:            ResourceKindXdb,
+		Namespace:       s.Namespace,
+		Name:            s.Name,
+		UID:             s.UID,
+		ResourceVersion: s.ResourceVersion,
+	}
+}
+
 func (s Snapshot) ObjectReference() *apiv1.ObjectReference {
 	return &apiv1.ObjectReference{
 		APIVersion:      SchemeGroupVersion.String(),
@@ -58,6 +69,8 @@ func ObjectReferenceFor(obj runtime.Object) *apiv1.ObjectReference {
 	case *Elasticsearch:
 		return u.ObjectReference()
 	case *Snapshot:
+		return u.ObjectReference()
+	case *Xdb:
 		return u.ObjectReference()
 	}
 	return &apiv1.ObjectReference{}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/appscode/go/hold"
 	"github.com/appscode/go/log"
+	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
 	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1alpha1"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	tcs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
@@ -20,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
+	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 )
@@ -72,15 +74,16 @@ func New(
 		ApiExtKubeClient: apiExtKubeClient,
 		promClient:       promClient,
 		cronController:   cronController,
-		recorder:         eventer.NewEventRecorder(client, "Postgres operator"),
+		// TODO
+		recorder:         eventer.NewEventRecorder(client, "Xdb operator"),
 		opt:              opt,
 		syncPeriod:       time.Minute * 2,
 	}
 }
 
 // Blocks caller. Intended to be called as a Go routine.
-func (c *Controller) RunAndHold() {
-	// Ensure x  TPR
+func (c *Controller) Run() {
+	// Ensure TPR
 	c.ensureCustomResourceDefinition()
 
 	// Start Cron
@@ -89,16 +92,26 @@ func (c *Controller) RunAndHold() {
 	defer c.cronController.StopCron()
 
 	// Watch x  TPR objects
-	go c.watchx()
-	// Watch DatabaseSnapshot with labelSelector only for x
+	go c.watchXdb()
+	// Watch DatabaseSnapshot with labelSelector only for Xdb
 	go c.watchDatabaseSnapshot()
-	// Watch DeletedDatabase with labelSelector only for x
+	// Watch DeletedDatabase with labelSelector only for Xdb
 	go c.watchDeletedDatabase()
 	// hold
 	hold.Hold()
 }
 
-func (c *Controller) watchx() {
+// Blocks caller. Intended to be called as a Go routine.
+func (c *Controller) RunAndHold() {
+	c.Run()
+
+	// Run HTTP server to expose metrics, audit endpoint & debug profiles.
+	go c.runHTTPServer()
+	// hold
+	hold.Hold()
+}
+
+func (c *Controller) watchXdb() {
 	lw := &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 			return c.ExtClient.Xdbs(metav1.NamespaceAll).List(metav1.ListOptions{})
@@ -114,13 +127,21 @@ func (c *Controller) watchx() {
 		c.syncPeriod,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				postgres := obj.(*tapi.Xdb)
-				if postgres.Status.CreationTime == nil {
-					c.create(postgres)
+				xdb := obj.(*tapi.Xdb)
+				kutildb.AssignTypeKind(xdb)
+				if xdb.Status.CreationTime == nil {
+					if err := c.create(xdb); err != nil {
+						log.Errorln(err)
+						c.pushFailureEvent(xdb, err.Error())
+					}
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				c.delete(obj.(*tapi.Xdb))
+				xdb := obj.(*tapi.Xdb)
+				kutildb.AssignTypeKind(xdb)
+				if err := c.pause(xdb); err != nil {
+					log.Errorln(err)
+				}
 			},
 			UpdateFunc: func(old, new interface{}) {
 				oldObj, ok := old.(*tapi.Xdb)
@@ -131,8 +152,12 @@ func (c *Controller) watchx() {
 				if !ok {
 					return
 				}
+				kutildb.AssignTypeKind(oldObj)
+				kutildb.AssignTypeKind(newObj)
 				if !reflect.DeepEqual(oldObj.Spec, newObj.Spec) {
-					c.update(oldObj, newObj)
+					if err := c.update(oldObj, newObj); err != nil {
+						log.Errorln(err)
+					}
 				}
 			},
 		},
@@ -142,7 +167,8 @@ func (c *Controller) watchx() {
 
 func (c *Controller) watchDatabaseSnapshot() {
 	labelMap := map[string]string{
-		tapi.LabelDatabaseKind: tapi.ResourceNameXdb,
+		// TODO: Use appropriate ResourceKind.
+		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{
@@ -165,7 +191,8 @@ func (c *Controller) watchDatabaseSnapshot() {
 
 func (c *Controller) watchDeletedDatabase() {
 	labelMap := map[string]string{
-		tapi.LabelDatabaseKind: tapi.ResourceNameXdb,
+		// TODO: Use appropriate ResourceKind.
+		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{
@@ -189,7 +216,8 @@ func (c *Controller) watchDeletedDatabase() {
 func (c *Controller) ensureCustomResourceDefinition() {
 	log.Infoln("Ensuring CustomResourceDefinition...")
 
-	resourceName := tapi.ResourceTypePostgres + "." + tapi.SchemeGroupVersion.Group
+	// TODO: Use appropriate ResourceType.
+	resourceName := tapi.ResourceTypeXdb + "." + tapi.SchemeGroupVersion.Group
 	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(resourceName, metav1.GetOptions{}); err != nil {
 		if !kerr.IsNotFound(err) {
 			log.Fatalln(err)
@@ -210,14 +238,35 @@ func (c *Controller) ensureCustomResourceDefinition() {
 			Version: tapi.SchemeGroupVersion.Version,
 			Scope:   extensionsobj.NamespaceScoped,
 			Names: extensionsobj.CustomResourceDefinitionNames{
-				Plural:     tapi.ResourceTypePostgres,
-				Kind:       tapi.ResourceKindPostgres,
-				ShortNames: []string{tapi.ResourceCodePostgres},
+				// TODO: Use appropriate const.
+				Plural:     tapi.ResourceTypeXdb,
+				Kind:       tapi.ResourceKindXdb,
+				ShortNames: []string{tapi.ResourceCodeXdb},
 			},
 		},
 	}
 
 	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil {
 		log.Fatalln(err)
+	}
+}
+
+func (c *Controller) pushFailureEvent(xdb *tapi.Xdb, reason string) {
+	c.recorder.Eventf(
+		xdb.ObjectReference(),
+		apiv1.EventTypeWarning,
+		eventer.EventReasonFailedToStart,
+		`Fail to be ready Xdb: "%v". Reason: %v`,
+		xdb.Name,
+		reason,
+	)
+
+	_, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
+		in.Status.Phase = tapi.DatabasePhaseFailed
+		in.Status.Reason = reason
+		return in
+	})
+	if err != nil {
+		c.recorder.Eventf(xdb.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 	}
 }
