@@ -10,6 +10,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
+// TODO: Change method name. ValidateXdb -> Validate<--->
 func ValidateXdb(client clientset.Interface, xdb *tapi.Xdb) error {
 	if xdb.Spec.Version == "" {
 		return fmt.Errorf(`Object 'Version' is missing in '%v'`, xdb.Spec)
@@ -17,7 +18,7 @@ func ValidateXdb(client clientset.Interface, xdb *tapi.Xdb) error {
 
 	// Set Database Image version
 	version := xdb.Spec.Version
-	// docker.ImageXdb should hold correct docker image name
+	// TODO: docker.ImageXdb should hold correct image name
 	if err := docker.CheckDockerImageVersion(docker.ImageXdb, version); err != nil {
 		return fmt.Errorf(`Image %v:%v not found`, docker.ImageXdb, version)
 	}
@@ -30,7 +31,7 @@ func ValidateXdb(client clientset.Interface, xdb *tapi.Xdb) error {
 	}
 
 	// ---> Start
-	// Use following if database needs/supports authentication secret
+	// TODO: Use following if database needs/supports authentication secret
 	// otherwise, delete
 	databaseSecret := xdb.Spec.DatabaseSecret
 	if databaseSecret != nil {

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"github.com/appscode/go/log"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
@@ -63,7 +64,7 @@ func (c *Controller) WipeOutDatabase(dormantDb *tapi.DormantDatabase) error {
 	}
 
 	// ---> Start
-	// Use following to delete secret, if appropriate
+	//TODO: Use following to delete secret, if appropriate
 	// Otherwise, remove it
 	/*
 		if dormantDb.Spec.Origin.Spec.Xdb.DatabaseSecret != nil {
@@ -79,15 +80,13 @@ func (c *Controller) WipeOutDatabase(dormantDb *tapi.DormantDatabase) error {
 }
 
 // ---> Start
-// Use this method to delete secret, if supported
+//TODO: Use this method to delete secret, if supported
 // Otherwise, remove it
 func (c *Controller) deleteSecret(dormantDb *tapi.DormantDatabase) error {
 
 	var secretFound bool = false
-	// Uncomment following line
-	/*
-		dormantDatabaseSecret := dormantDb.Spec.Origin.Spec.Xdb.DatabaseSecret
-	*/
+
+	dormantDatabaseSecret := dormantDb.Spec.Origin.Spec.Xdb.DatabaseSecret
 
 	xdbList, err := c.ExtClient.Xdbs(dormantDb.Namespace).List(metav1.ListOptions{})
 	if err != nil {
@@ -97,13 +96,10 @@ func (c *Controller) deleteSecret(dormantDb *tapi.DormantDatabase) error {
 	for _, xdb := range xdbList.Items {
 		databaseSecret := xdb.Spec.DatabaseSecret
 		if databaseSecret != nil {
-			// Uncomment following
-			/*
-				if databaseSecret.SecretName == dormantDatabaseSecret.SecretName {
-					secretFound = true
-					break
-				}
-			*/
+			if databaseSecret.SecretName == dormantDatabaseSecret.SecretName {
+				secretFound = true
+				break
+			}
 		}
 	}
 
@@ -125,43 +121,34 @@ func (c *Controller) deleteSecret(dormantDb *tapi.DormantDatabase) error {
 				continue
 			}
 
-			// Uncomment following
-			/*
-				databaseSecret := ddb.Spec.Origin.Spec.Xdb.DatabaseSecret
-				if databaseSecret != nil {
-					if databaseSecret.SecretName == dormantDatabaseSecret.SecretName {
-						secretFound = true
-						break
-					}
+			databaseSecret := ddb.Spec.Origin.Spec.Xdb.DatabaseSecret
+			if databaseSecret != nil {
+				if databaseSecret.SecretName == dormantDatabaseSecret.SecretName {
+					secretFound = true
+					break
 				}
-			*/
+			}
+
 		}
 	}
 
 	if !secretFound {
-		// Uncomment following
-		/*
-			if err := c.DeleteSecret(dormantDatabaseSecret.SecretName, dormantDb.Namespace); err != nil {
-				return err
-			}
-		*/
+		if err := c.DeleteSecret(dormantDatabaseSecret.SecretName, dormantDb.Namespace); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
-
 // ---> End
 
 func (c *Controller) ResumeDatabase(dormantDb *tapi.DormantDatabase) error {
 	origin := dormantDb.Spec.Origin
 	objectMeta := origin.ObjectMeta
 
-	// Uncomment following
-	/*
-		if origin.Spec.Xdb.Init != nil {
-			return errors.New("do not support InitSpec in spec.origin.xdb")
-		}
-	*/
+	if origin.Spec.Xdb.Init != nil {
+		return errors.New("do not support InitSpec in spec.origin.xdb")
+	}
 
 	xdb := &tapi.Xdb{
 		ObjectMeta: metav1.ObjectMeta{
@@ -170,10 +157,7 @@ func (c *Controller) ResumeDatabase(dormantDb *tapi.DormantDatabase) error {
 			Labels:      objectMeta.Labels,
 			Annotations: objectMeta.Annotations,
 		},
-		// Uncomment following
-		/*
-			Spec: *origin.Spec.Xdb,
-		*/
+		Spec: *origin.Spec.Xdb,
 	}
 
 	if xdb.Annotations == nil {

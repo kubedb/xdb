@@ -74,6 +74,7 @@ func New(
 		ApiExtKubeClient: apiExtKubeClient,
 		promClient:       promClient,
 		cronController:   cronController,
+		// TODO
 		recorder:         eventer.NewEventRecorder(client, "Xdb operator"),
 		opt:              opt,
 		syncPeriod:       time.Minute * 2,
@@ -82,7 +83,7 @@ func New(
 
 // Blocks caller. Intended to be called as a Go routine.
 func (c *Controller) Run() {
-	// Ensure Xdb TPR
+	// Ensure TPR
 	c.ensureCustomResourceDefinition()
 
 	// Start Cron
@@ -166,6 +167,7 @@ func (c *Controller) watchXdb() {
 
 func (c *Controller) watchDatabaseSnapshot() {
 	labelMap := map[string]string{
+		// TODO: Use appropriate ResourceKind.
 		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
 	}
 	// Watch with label selector
@@ -189,6 +191,7 @@ func (c *Controller) watchDatabaseSnapshot() {
 
 func (c *Controller) watchDeletedDatabase() {
 	labelMap := map[string]string{
+		// TODO: Use appropriate ResourceKind.
 		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
 	}
 	// Watch with label selector
@@ -213,6 +216,7 @@ func (c *Controller) watchDeletedDatabase() {
 func (c *Controller) ensureCustomResourceDefinition() {
 	log.Infoln("Ensuring CustomResourceDefinition...")
 
+	// TODO: Use appropriate ResourceType.
 	resourceName := tapi.ResourceTypeXdb + "." + tapi.SchemeGroupVersion.Group
 	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(resourceName, metav1.GetOptions{}); err != nil {
 		if !kerr.IsNotFound(err) {
@@ -234,6 +238,7 @@ func (c *Controller) ensureCustomResourceDefinition() {
 			Version: tapi.SchemeGroupVersion.Version,
 			Scope:   extensionsobj.NamespaceScoped,
 			Names: extensionsobj.CustomResourceDefinitionNames{
+				// TODO: Use appropriate const.
 				Plural:     tapi.ResourceTypeXdb,
 				Kind:       tapi.ResourceKindXdb,
 				ShortNames: []string{tapi.ResourceCodeXdb},

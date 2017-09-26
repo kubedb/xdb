@@ -38,7 +38,7 @@ func (c *Controller) createRole(xdb *tapi.Xdb) error {
 					Verbs:         []string{"get"},
 				},
 				{
-					// Use this if secret is necessary, Otherwise remove it
+					// TODO. Use this if secret is necessary, Otherwise remove it
 					APIGroups:     []string{apiv1.GroupName},
 					Resources:     []string{"secrets"},
 					ResourceNames: []string{xdb.Spec.DatabaseSecret.SecretName},

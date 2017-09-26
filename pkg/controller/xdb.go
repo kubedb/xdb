@@ -18,7 +18,9 @@ import (
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 )
 
+// TODO: Use your resource instead of *tapi.Xdb
 func (c *Controller) create(xdb *tapi.Xdb) error {
+	// TODO: Use correct TryPatch method
 	_, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
 		t := metav1.Now()
 		in.Status.CreationTime = &t
@@ -162,12 +164,14 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 	}
 
 	// Check DatabaseKind
+	// TODO: Change tapi.ResourceKindXdb
 	if dormantDb.Labels[tapi.LabelDatabaseKind] != tapi.ResourceKindXdb {
 		return sendEvent(fmt.Sprintf(`Invalid Xdb: "%v". Exists DormantDatabase "%v" of different Kind`,
 			xdb.Name, dormantDb.Name))
 	}
 
 	// Check InitSpec
+	// TODO: Change tapi.XdbInitSpec
 	initSpecAnnotationStr := dormantDb.Annotations[tapi.XdbInitSpec]
 	if initSpecAnnotationStr != "" {
 		var initSpecAnnotation *tapi.InitSpec
@@ -183,15 +187,12 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 	}
 
 	// Check Origin Spec
-	// Uncomment following line
-	/*
-		drmnOriginSpec := dormantDb.Spec.Origin.Spec.Xdb
-	*/
+	drmnOriginSpec := dormantDb.Spec.Origin.Spec.Xdb
 	originalSpec := xdb.Spec
 	originalSpec.Init = nil
 
 	// ---> Start
-	// Use following part if database secret is supported
+	// TODO: Use following part if database secret is supported
 	// Otherwise, remove it
 	if originalSpec.DatabaseSecret == nil {
 		originalSpec.DatabaseSecret = &apiv1.SecretVolumeSource{
@@ -200,12 +201,9 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 	}
 	// ---> End
 
-	// Uncomment following line
-	/*
-		if !reflect.DeepEqual(drmnOriginSpec, &originalSpec) {
-			return sendEvent("Xdb spec mismatches with OriginSpec in DormantDatabases")
-		}
-	*/
+	if !reflect.DeepEqual(drmnOriginSpec, &originalSpec) {
+		return sendEvent("Xdb spec mismatches with OriginSpec in DormantDatabases")
+	}
 
 	return true, nil
 }
@@ -276,6 +274,7 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 	}
 
 	if xdb.Spec.Init != nil && xdb.Spec.Init.SnapshotSource != nil {
+		// TODO: Use correct TryPatch method
 		_, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
 			in.Status.Phase = tapi.DatabasePhaseInitializing
 			return in
@@ -296,6 +295,7 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 		}
 	}
 
+	// TODO: Use correct TryPatch method
 	_, err = kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
 		in.Status.Phase = tapi.DatabasePhaseRunning
 		return in

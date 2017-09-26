@@ -8,10 +8,8 @@ import (
 
 	"github.com/appscode/log"
 	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1alpha1"
-	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	tcs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
 	amc "github.com/k8sdb/apimachinery/pkg/controller"
-	"github.com/k8sdb/apimachinery/pkg/migrator"
 	"github.com/k8sdb/xdb/pkg/controller"
 	"github.com/spf13/cobra"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -37,6 +35,7 @@ func NewCmdRun() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "run",
+		// TODO
 		Short: "Run Xdb in Kubernetes",
 		Run: func(cmd *cobra.Command, args []string) {
 			config, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfigPath)
@@ -60,16 +59,6 @@ func NewCmdRun() *cobra.Command {
 
 			w := controller.New(client, apiExtKubeClient, extClient, promClient, cronController, opt)
 			defer runtime.HandleCrash()
-
-			tprMigrator := migrator.NewMigrator(client, apiExtKubeClient, extClient)
-			err = tprMigrator.RunMigration(
-				&tapi.Xdb{},
-				&tapi.Snapshot{},
-				&tapi.DormantDatabase{},
-			)
-			if err != nil {
-				log.Fatalln(err)
-			}
 
 			fmt.Println("Starting operator...")
 			w.RunAndHold()
