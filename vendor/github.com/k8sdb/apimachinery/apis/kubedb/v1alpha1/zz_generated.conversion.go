@@ -25,14 +25,14 @@ import (
 
 	types "github.com/appscode/go/encoding/json/types"
 	kubedb "github.com/k8sdb/apimachinery/apis/kubedb"
+	core_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
-	api_v1 "k8s.io/client-go/pkg/api/v1"
 )
 
 func init() {
-	SchemeBuilder.Register(RegisterConversions)
+	localSchemeBuilder.Register(RegisterConversions)
 }
 
 // RegisterConversions adds conversion functions to the given scheme.
@@ -341,16 +341,16 @@ func Convert_kubedb_ElasticsearchList_To_v1alpha1_ElasticsearchList(in *kubedb.E
 func autoConvert_v1alpha1_ElasticsearchSpec_To_kubedb_ElasticsearchSpec(in *ElasticsearchSpec, out *kubedb.ElasticsearchSpec, s conversion.Scope) error {
 	out.Version = types.StrYo(in.Version)
 	out.Replicas = in.Replicas
-	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
+	out.Storage = (*core_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*kubedb.InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*kubedb.BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))
 	out.DoNotPause = in.DoNotPause
 	out.Monitor = (*kubedb.MonitorSpec)(unsafe.Pointer(in.Monitor))
 	out.Resources = in.Resources
-	out.Affinity = (*api_v1.Affinity)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*core_v1.Affinity)(unsafe.Pointer(in.Affinity))
 	out.SchedulerName = in.SchedulerName
-	out.Tolerations = *(*[]api_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
+	out.Tolerations = *(*[]core_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	return nil
 }
 
@@ -362,16 +362,16 @@ func Convert_v1alpha1_ElasticsearchSpec_To_kubedb_ElasticsearchSpec(in *Elastics
 func autoConvert_kubedb_ElasticsearchSpec_To_v1alpha1_ElasticsearchSpec(in *kubedb.ElasticsearchSpec, out *ElasticsearchSpec, s conversion.Scope) error {
 	out.Version = types.StrYo(in.Version)
 	out.Replicas = in.Replicas
-	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
+	out.Storage = (*core_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))
 	out.DoNotPause = in.DoNotPause
 	out.Monitor = (*MonitorSpec)(unsafe.Pointer(in.Monitor))
 	out.Resources = in.Resources
-	out.Affinity = (*api_v1.Affinity)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*core_v1.Affinity)(unsafe.Pointer(in.Affinity))
 	out.SchedulerName = in.SchedulerName
-	out.Tolerations = *(*[]api_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
+	out.Tolerations = *(*[]core_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	return nil
 }
 
@@ -557,6 +557,7 @@ func Convert_kubedb_Origin_To_v1alpha1_Origin(in *kubedb.Origin, out *Origin, s 
 func autoConvert_v1alpha1_OriginSpec_To_kubedb_OriginSpec(in *OriginSpec, out *kubedb.OriginSpec, s conversion.Scope) error {
 	out.Elasticsearch = (*kubedb.ElasticsearchSpec)(unsafe.Pointer(in.Elasticsearch))
 	out.Postgres = (*kubedb.PostgresSpec)(unsafe.Pointer(in.Postgres))
+	out.Xdb = (*kubedb.XdbSpec)(unsafe.Pointer(in.Xdb))
 	return nil
 }
 
@@ -568,6 +569,7 @@ func Convert_v1alpha1_OriginSpec_To_kubedb_OriginSpec(in *OriginSpec, out *kubed
 func autoConvert_kubedb_OriginSpec_To_v1alpha1_OriginSpec(in *kubedb.OriginSpec, out *OriginSpec, s conversion.Scope) error {
 	out.Elasticsearch = (*ElasticsearchSpec)(unsafe.Pointer(in.Elasticsearch))
 	out.Postgres = (*PostgresSpec)(unsafe.Pointer(in.Postgres))
+	out.Xdb = (*XdbSpec)(unsafe.Pointer(in.Xdb))
 	return nil
 }
 
@@ -652,17 +654,17 @@ func Convert_kubedb_PostgresSchemaInfo_To_v1alpha1_PostgresSchemaInfo(in *kubedb
 
 func autoConvert_v1alpha1_PostgresSpec_To_kubedb_PostgresSpec(in *PostgresSpec, out *kubedb.PostgresSpec, s conversion.Scope) error {
 	out.Version = types.StrYo(in.Version)
-	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
-	out.DatabaseSecret = (*api_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
+	out.Storage = (*core_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
+	out.DatabaseSecret = (*core_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*kubedb.InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*kubedb.BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))
 	out.DoNotPause = in.DoNotPause
 	out.Monitor = (*kubedb.MonitorSpec)(unsafe.Pointer(in.Monitor))
 	out.Resources = in.Resources
-	out.Affinity = (*api_v1.Affinity)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*core_v1.Affinity)(unsafe.Pointer(in.Affinity))
 	out.SchedulerName = in.SchedulerName
-	out.Tolerations = *(*[]api_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
+	out.Tolerations = *(*[]core_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	return nil
 }
 
@@ -673,17 +675,17 @@ func Convert_v1alpha1_PostgresSpec_To_kubedb_PostgresSpec(in *PostgresSpec, out 
 
 func autoConvert_kubedb_PostgresSpec_To_v1alpha1_PostgresSpec(in *kubedb.PostgresSpec, out *PostgresSpec, s conversion.Scope) error {
 	out.Version = types.StrYo(in.Version)
-	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
-	out.DatabaseSecret = (*api_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
+	out.Storage = (*core_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
+	out.DatabaseSecret = (*core_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))
 	out.DoNotPause = in.DoNotPause
 	out.Monitor = (*MonitorSpec)(unsafe.Pointer(in.Monitor))
 	out.Resources = in.Resources
-	out.Affinity = (*api_v1.Affinity)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*core_v1.Affinity)(unsafe.Pointer(in.Affinity))
 	out.SchedulerName = in.SchedulerName
-	out.Tolerations = *(*[]api_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
+	out.Tolerations = *(*[]core_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	return nil
 }
 
@@ -1145,17 +1147,17 @@ func Convert_kubedb_XdbList_To_v1alpha1_XdbList(in *kubedb.XdbList, out *XdbList
 func autoConvert_v1alpha1_XdbSpec_To_kubedb_XdbSpec(in *XdbSpec, out *kubedb.XdbSpec, s conversion.Scope) error {
 	out.Version = in.Version
 	out.Replicas = in.Replicas
-	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
-	out.DatabaseSecret = (*api_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
+	out.Storage = (*core_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
+	out.DatabaseSecret = (*core_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*kubedb.InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*kubedb.BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))
 	out.DoNotPause = in.DoNotPause
 	out.Monitor = (*kubedb.MonitorSpec)(unsafe.Pointer(in.Monitor))
 	out.Resources = in.Resources
-	out.Affinity = (*api_v1.Affinity)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*core_v1.Affinity)(unsafe.Pointer(in.Affinity))
 	out.SchedulerName = in.SchedulerName
-	out.Tolerations = *(*[]api_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
+	out.Tolerations = *(*[]core_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	return nil
 }
 
@@ -1167,17 +1169,17 @@ func Convert_v1alpha1_XdbSpec_To_kubedb_XdbSpec(in *XdbSpec, out *kubedb.XdbSpec
 func autoConvert_kubedb_XdbSpec_To_v1alpha1_XdbSpec(in *kubedb.XdbSpec, out *XdbSpec, s conversion.Scope) error {
 	out.Version = in.Version
 	out.Replicas = in.Replicas
-	out.Storage = (*api_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
-	out.DatabaseSecret = (*api_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
+	out.Storage = (*core_v1.PersistentVolumeClaimSpec)(unsafe.Pointer(in.Storage))
+	out.DatabaseSecret = (*core_v1.SecretVolumeSource)(unsafe.Pointer(in.DatabaseSecret))
 	out.NodeSelector = *(*map[string]string)(unsafe.Pointer(&in.NodeSelector))
 	out.Init = (*InitSpec)(unsafe.Pointer(in.Init))
 	out.BackupSchedule = (*BackupScheduleSpec)(unsafe.Pointer(in.BackupSchedule))
 	out.DoNotPause = in.DoNotPause
 	out.Monitor = (*MonitorSpec)(unsafe.Pointer(in.Monitor))
 	out.Resources = in.Resources
-	out.Affinity = (*api_v1.Affinity)(unsafe.Pointer(in.Affinity))
+	out.Affinity = (*core_v1.Affinity)(unsafe.Pointer(in.Affinity))
 	out.SchedulerName = in.SchedulerName
-	out.Tolerations = *(*[]api_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
+	out.Tolerations = *(*[]core_v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	return nil
 }
 

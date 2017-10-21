@@ -7,15 +7,15 @@ import (
 	"reflect"
 	"time"
 
-	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
 	"github.com/appscode/log"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
+	kutildb "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
 	"github.com/k8sdb/apimachinery/pkg/storage"
 	"github.com/k8sdb/xdb/pkg/validator"
+	core "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
 )
 
 // TODO: Use your resource instead of *tapi.Xdb
@@ -29,18 +29,18 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 	})
 
 	if err != nil {
-		c.recorder.Eventf(xdb.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+		c.recorder.Eventf(xdb.ObjectReference(), core.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 		return err
 	}
 
 	if err := validator.ValidateXdb(c.Client, xdb); err != nil {
-		c.recorder.Event(xdb.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonInvalid, err.Error())
+		c.recorder.Event(xdb.ObjectReference(), core.EventTypeWarning, eventer.EventReasonInvalid, err.Error())
 		return err
 	}
 	// Event for successful validation
 	c.recorder.Event(
 		xdb.ObjectReference(),
-		apiv1.EventTypeNormal,
+		core.EventTypeNormal,
 		eventer.EventReasonSuccessfulValidate,
 		"Successfully validate Xdb",
 	)
@@ -69,7 +69,7 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 			return in
 		})
 		if err != nil {
-			c.recorder.Eventf(xdb.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+			c.recorder.Eventf(xdb.ObjectReference(), core.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 			return err
 		}
 
@@ -77,14 +77,14 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 	}
 
 	// Event for notification that kubernetes objects are creating
-	c.recorder.Event(xdb.ObjectReference(), apiv1.EventTypeNormal, eventer.EventReasonCreating, "Creating Kubernetes objects")
+	c.recorder.Event(xdb.ObjectReference(), core.EventTypeNormal, eventer.EventReasonCreating, "Creating Kubernetes objects")
 
 	// create Governing Service
 	governingService := c.opt.GoverningService
 	if err := c.CreateGoverningService(governingService, xdb.Namespace); err != nil {
 		c.recorder.Eventf(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToCreate,
 			`Failed to create Service: "%v". Reason: %v`,
 			governingService,
@@ -105,7 +105,7 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 
 	c.recorder.Event(
 		xdb.ObjectReference(),
-		apiv1.EventTypeNormal,
+		core.EventTypeNormal,
 		eventer.EventReasonSuccessfulCreate,
 		"Successfully created Xdb",
 	)
@@ -117,7 +117,7 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 		if err := c.addMonitor(xdb); err != nil {
 			c.recorder.Eventf(
 				xdb.ObjectReference(),
-				apiv1.EventTypeWarning,
+				core.EventTypeWarning,
 				eventer.EventReasonFailedToCreate,
 				"Failed to add monitoring system. Reason: %v",
 				err,
@@ -127,7 +127,7 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 		}
 		c.recorder.Event(
 			xdb.ObjectReference(),
-			apiv1.EventTypeNormal,
+			core.EventTypeNormal,
 			eventer.EventReasonSuccessfulCreate,
 			"Successfully added monitoring system.",
 		)
@@ -142,7 +142,7 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 		if !kerr.IsNotFound(err) {
 			c.recorder.Eventf(
 				xdb.ObjectReference(),
-				apiv1.EventTypeWarning,
+				core.EventTypeWarning,
 				eventer.EventReasonFailedToGet,
 				`Fail to get DormantDatabase: "%v". Reason: %v`,
 				xdb.Name,
@@ -156,7 +156,7 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 	var sendEvent = func(message string) (bool, error) {
 		c.recorder.Event(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToCreate,
 			message,
 		)
@@ -195,7 +195,7 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 	// TODO: Use following part if database secret is supported
 	// Otherwise, remove it
 	if originalSpec.DatabaseSecret == nil {
-		originalSpec.DatabaseSecret = &apiv1.SecretVolumeSource{
+		originalSpec.DatabaseSecret = &core.SecretVolumeSource{
 			SecretName: xdb.Name + "-admin-auth",
 		}
 	}
@@ -222,7 +222,7 @@ func (c *Controller) ensureService(xdb *tapi.Xdb) error {
 	if err := c.createService(xdb); err != nil {
 		c.recorder.Eventf(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToCreate,
 			"Failed to create Service. Reason: %v",
 			err,
@@ -246,7 +246,7 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 	if err != nil {
 		c.recorder.Eventf(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToCreate,
 			"Failed to create StatefulSet. Reason: %v",
 			err,
@@ -258,7 +258,7 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 	if err := c.CheckStatefulSetPodStatus(statefulSet, durationCheckStatefulSet); err != nil {
 		c.recorder.Eventf(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToStart,
 			`Failed to create StatefulSet. Reason: %v`,
 			err,
@@ -267,7 +267,7 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 	} else {
 		c.recorder.Event(
 			xdb.ObjectReference(),
-			apiv1.EventTypeNormal,
+			core.EventTypeNormal,
 			eventer.EventReasonSuccessfulCreate,
 			"Successfully created StatefulSet",
 		)
@@ -280,14 +280,14 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 			return in
 		})
 		if err != nil {
-			c.recorder.Eventf(xdb, apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+			c.recorder.Eventf(xdb, core.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 			return err
 		}
 
 		if err := c.initialize(xdb); err != nil {
 			c.recorder.Eventf(
 				xdb.ObjectReference(),
-				apiv1.EventTypeWarning,
+				core.EventTypeWarning,
 				eventer.EventReasonFailedToInitialize,
 				"Failed to initialize. Reason: %v",
 				err,
@@ -301,7 +301,7 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 		return in
 	})
 	if err != nil {
-		c.recorder.Eventf(xdb, apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+		c.recorder.Eventf(xdb, core.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 		return err
 	}
 	return nil
@@ -314,7 +314,7 @@ func (c *Controller) ensureBackupScheduler(xdb *tapi.Xdb) {
 		if err != nil {
 			c.recorder.Eventf(
 				xdb.ObjectReference(),
-				apiv1.EventTypeWarning,
+				core.EventTypeWarning,
 				eventer.EventReasonFailedToSchedule,
 				"Failed to schedule snapshot. Reason: %v",
 				err,
@@ -335,7 +335,7 @@ func (c *Controller) initialize(xdb *tapi.Xdb) error {
 	// Event for notification that kubernetes objects are creating
 	c.recorder.Eventf(
 		xdb.ObjectReference(),
-		apiv1.EventTypeNormal,
+		core.EventTypeNormal,
 		eventer.EventReasonInitializing,
 		`Initializing from Snapshot: "%v"`,
 		snapshotSource.Name,
@@ -368,14 +368,14 @@ func (c *Controller) initialize(xdb *tapi.Xdb) error {
 	if jobSuccess {
 		c.recorder.Event(
 			xdb.ObjectReference(),
-			apiv1.EventTypeNormal,
+			core.EventTypeNormal,
 			eventer.EventReasonSuccessfulInitialize,
 			"Successfully completed initialization",
 		)
 	} else {
 		c.recorder.Event(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToInitialize,
 			"Failed to complete initialization",
 		)
@@ -387,17 +387,17 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 	if xdb.Annotations != nil {
 		if val, found := xdb.Annotations["kubedb.com/ignore"]; found {
 			//TODO: Add Event Reason "Ignored"
-			c.recorder.Event(xdb.ObjectReference(), apiv1.EventTypeNormal, "Ignored", val)
+			c.recorder.Event(xdb.ObjectReference(), core.EventTypeNormal, "Ignored", val)
 			return nil
 		}
 	}
 
-	c.recorder.Event(xdb.ObjectReference(), apiv1.EventTypeNormal, eventer.EventReasonPausing, "Pausing Xdb")
+	c.recorder.Event(xdb.ObjectReference(), core.EventTypeNormal, eventer.EventReasonPausing, "Pausing Xdb")
 
 	if xdb.Spec.DoNotPause {
 		c.recorder.Eventf(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToPause,
 			`Xdb "%v" is locked.`,
 			xdb.Name,
@@ -406,7 +406,7 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 		if err := c.reCreateXdb(xdb); err != nil {
 			c.recorder.Eventf(
 				xdb.ObjectReference(),
-				apiv1.EventTypeWarning,
+				core.EventTypeWarning,
 				eventer.EventReasonFailedToCreate,
 				`Failed to recreate Xdb: "%v". Reason: %v`,
 				xdb.Name,
@@ -420,7 +420,7 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 	if _, err := c.createDormantDatabase(xdb); err != nil {
 		c.recorder.Eventf(
 			xdb.ObjectReference(),
-			apiv1.EventTypeWarning,
+			core.EventTypeWarning,
 			eventer.EventReasonFailedToCreate,
 			`Failed to create DormantDatabase: "%v". Reason: %v`,
 			xdb.Name,
@@ -430,7 +430,7 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 	}
 	c.recorder.Eventf(
 		xdb.ObjectReference(),
-		apiv1.EventTypeNormal,
+		core.EventTypeNormal,
 		eventer.EventReasonSuccessfulCreate,
 		`Successfully created DormantDatabase: "%v"`,
 		xdb.Name,
@@ -442,7 +442,7 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 		if err := c.deleteMonitor(xdb); err != nil {
 			c.recorder.Eventf(
 				xdb.ObjectReference(),
-				apiv1.EventTypeWarning,
+				core.EventTypeWarning,
 				eventer.EventReasonFailedToDelete,
 				"Failed to delete monitoring system. Reason: %v",
 				err,
@@ -452,7 +452,7 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 		}
 		c.recorder.Event(
 			xdb.ObjectReference(),
-			apiv1.EventTypeNormal,
+			core.EventTypeNormal,
 			eventer.EventReasonSuccessfulMonitorDelete,
 			"Successfully deleted monitoring system.",
 		)
@@ -462,13 +462,13 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 
 func (c *Controller) update(oldXdb, updatedXdb *tapi.Xdb) error {
 	if err := validator.ValidateXdb(c.Client, updatedXdb); err != nil {
-		c.recorder.Event(updatedXdb.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonInvalid, err.Error())
+		c.recorder.Event(updatedXdb.ObjectReference(), core.EventTypeWarning, eventer.EventReasonInvalid, err.Error())
 		return err
 	}
 	// Event for successful validation
 	c.recorder.Event(
 		updatedXdb.ObjectReference(),
-		apiv1.EventTypeNormal,
+		core.EventTypeNormal,
 		eventer.EventReasonSuccessfulValidate,
 		"Successfully validate Xdb",
 	)
@@ -488,7 +488,7 @@ func (c *Controller) update(oldXdb, updatedXdb *tapi.Xdb) error {
 		if err := c.updateMonitor(oldXdb, updatedXdb); err != nil {
 			c.recorder.Eventf(
 				updatedXdb.ObjectReference(),
-				apiv1.EventTypeWarning,
+				core.EventTypeWarning,
 				eventer.EventReasonFailedToUpdate,
 				"Failed to update monitoring system. Reason: %v",
 				err,
@@ -498,7 +498,7 @@ func (c *Controller) update(oldXdb, updatedXdb *tapi.Xdb) error {
 		}
 		c.recorder.Event(
 			updatedXdb.ObjectReference(),
-			apiv1.EventTypeNormal,
+			core.EventTypeNormal,
 			eventer.EventReasonSuccessfulMonitorUpdate,
 			"Successfully updated monitoring system.",
 		)
