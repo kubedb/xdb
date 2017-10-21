@@ -6,12 +6,13 @@ import (
 
 	"github.com/appscode/go/hold"
 	"github.com/appscode/go/log"
-	kutildb "github.com/appscode/kutil/kubedb/v1alpha1"
 	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1alpha1"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	tcs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
+	kutildb "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
 	amc "github.com/k8sdb/apimachinery/pkg/controller"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
+	core "k8s.io/api/core/v1"
 	extensionsobj "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
@@ -21,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 )
@@ -75,9 +75,9 @@ func New(
 		promClient:       promClient,
 		cronController:   cronController,
 		// TODO
-		recorder:         eventer.NewEventRecorder(client, "Xdb operator"),
-		opt:              opt,
-		syncPeriod:       time.Minute * 2,
+		recorder:   eventer.NewEventRecorder(client, "Xdb operator"),
+		opt:        opt,
+		syncPeriod: time.Minute * 2,
 	}
 }
 
@@ -254,7 +254,7 @@ func (c *Controller) ensureCustomResourceDefinition() {
 func (c *Controller) pushFailureEvent(xdb *tapi.Xdb, reason string) {
 	c.recorder.Eventf(
 		xdb.ObjectReference(),
-		apiv1.EventTypeWarning,
+		core.EventTypeWarning,
 		eventer.EventReasonFailedToStart,
 		`Fail to be ready Xdb: "%v". Reason: %v`,
 		xdb.Name,
@@ -267,6 +267,6 @@ func (c *Controller) pushFailureEvent(xdb *tapi.Xdb, reason string) {
 		return in
 	})
 	if err != nil {
-		c.recorder.Eventf(xdb.ObjectReference(), apiv1.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
+		c.recorder.Eventf(xdb.ObjectReference(), core.EventTypeWarning, eventer.EventReasonFailedToUpdate, err.Error())
 	}
 }

@@ -34,7 +34,7 @@ func NewCmdRun() *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "run",
+		Use: "run",
 		// TODO
 		Short: "Run Xdb in Kubernetes",
 		Run: func(cmd *cobra.Command, args []string) {

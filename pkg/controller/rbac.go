@@ -5,10 +5,10 @@ import (
 	kutilrbac "github.com/appscode/kutil/rbac/v1beta1"
 	"github.com/k8sdb/apimachinery/apis/kubedb"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
+	core "k8s.io/api/core/v1"
+	rbac "k8s.io/api/rbac/v1beta1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
-	rbac "k8s.io/client-go/pkg/apis/rbac/v1beta1"
 )
 
 func (c *Controller) deleteRole(xdb *tapi.Xdb) error {
@@ -23,7 +23,7 @@ func (c *Controller) deleteRole(xdb *tapi.Xdb) error {
 
 func (c *Controller) createRole(xdb *tapi.Xdb) error {
 	// Create new Roles
-	_, err := kutilrbac.EnsureRole(
+	_, err := kutilrbac.CreateOrPatchRole(
 		c.Client,
 		metav1.ObjectMeta{
 			Name:      xdb.OffshootName(),
@@ -39,7 +39,7 @@ func (c *Controller) createRole(xdb *tapi.Xdb) error {
 				},
 				{
 					// TODO. Use this if secret is necessary, Otherwise remove it
-					APIGroups:     []string{apiv1.GroupName},
+					APIGroups:     []string{core.GroupName},
 					Resources:     []string{"secrets"},
 					ResourceNames: []string{xdb.Spec.DatabaseSecret.SecretName},
 					Verbs:         []string{"get"},
@@ -63,13 +63,13 @@ func (c *Controller) deleteServiceAccount(xdb *tapi.Xdb) error {
 
 func (c *Controller) createServiceAccount(xdb *tapi.Xdb) error {
 	// Create new ServiceAccount
-	_, err := kutilcore.EnsureServiceAccount(
+	_, err := kutilcore.CreateOrPatchServiceAccount(
 		c.Client,
 		metav1.ObjectMeta{
 			Name:      xdb.OffshootName(),
 			Namespace: xdb.Namespace,
 		},
-		func(in *apiv1.ServiceAccount) *apiv1.ServiceAccount {
+		func(in *core.ServiceAccount) *core.ServiceAccount {
 			return in
 		},
 	)
@@ -88,7 +88,7 @@ func (c *Controller) deleteRoleBinding(xdb *tapi.Xdb) error {
 
 func (c *Controller) createRoleBinding(xdb *tapi.Xdb) error {
 	// Ensure new RoleBindings
-	_, err := kutilrbac.EnsureRoleBinding(
+	_, err := kutilrbac.CreateOrPatchRoleBinding(
 		c.Client,
 		metav1.ObjectMeta{
 			Name:      xdb.OffshootName(),

@@ -59,6 +59,41 @@ func newXdbs(c *KubedbV1alpha1Client, namespace string) *xdbs {
 	}
 }
 
+// Get takes name of the xdb, and returns the corresponding xdb object, and an error if there is any.
+func (c *xdbs) Get(name string, options v1.GetOptions) (result *v1alpha1.Xdb, err error) {
+	result = &v1alpha1.Xdb{}
+	err = c.client.Get().
+		Namespace(c.ns).
+		Resource("xdbs").
+		Name(name).
+		VersionedParams(&options, scheme.ParameterCodec).
+		Do().
+		Into(result)
+	return
+}
+
+// List takes label and field selectors, and returns the list of Xdbs that match those selectors.
+func (c *xdbs) List(opts v1.ListOptions) (result *v1alpha1.XdbList, err error) {
+	result = &v1alpha1.XdbList{}
+	err = c.client.Get().
+		Namespace(c.ns).
+		Resource("xdbs").
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Do().
+		Into(result)
+	return
+}
+
+// Watch returns a watch.Interface that watches the requested xdbs.
+func (c *xdbs) Watch(opts v1.ListOptions) (watch.Interface, error) {
+	opts.Watch = true
+	return c.client.Get().
+		Namespace(c.ns).
+		Resource("xdbs").
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Watch()
+}
+
 // Create takes the representation of a xdb and creates it.  Returns the server's representation of the xdb, and an error, if there is any.
 func (c *xdbs) Create(xdb *v1alpha1.Xdb) (result *v1alpha1.Xdb, err error) {
 	result = &v1alpha1.Xdb{}
@@ -85,7 +120,7 @@ func (c *xdbs) Update(xdb *v1alpha1.Xdb) (result *v1alpha1.Xdb, err error) {
 }
 
 // UpdateStatus was generated because the type contains a Status member.
-// Add a +genclientstatus=false comment above the type to avoid generating UpdateStatus().
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 
 func (c *xdbs) UpdateStatus(xdb *v1alpha1.Xdb) (result *v1alpha1.Xdb, err error) {
 	result = &v1alpha1.Xdb{}
@@ -120,41 +155,6 @@ func (c *xdbs) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOp
 		Body(options).
 		Do().
 		Error()
-}
-
-// Get takes name of the xdb, and returns the corresponding xdb object, and an error if there is any.
-func (c *xdbs) Get(name string, options v1.GetOptions) (result *v1alpha1.Xdb, err error) {
-	result = &v1alpha1.Xdb{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("xdbs").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do().
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of Xdbs that match those selectors.
-func (c *xdbs) List(opts v1.ListOptions) (result *v1alpha1.XdbList, err error) {
-	result = &v1alpha1.XdbList{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("xdbs").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Do().
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested xdbs.
-func (c *xdbs) Watch(opts v1.ListOptions) (watch.Interface, error) {
-	opts.Watch = true
-	return c.client.Get().
-		Namespace(c.ns).
-		Resource("xdbs").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Watch()
 }
 
 // Patch applies the patch and returns the patched xdb.

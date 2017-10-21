@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+
 	"github.com/appscode/go/log"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
@@ -140,6 +141,7 @@ func (c *Controller) deleteSecret(dormantDb *tapi.DormantDatabase) error {
 
 	return nil
 }
+
 // ---> End
 
 func (c *Controller) ResumeDatabase(dormantDb *tapi.DormantDatabase) error {
