@@ -7,11 +7,11 @@ import (
 	"github.com/k8sdb/apimachinery/pkg/docker"
 	amv "github.com/k8sdb/apimachinery/pkg/validator"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
 )
 
 // TODO: Change method name. ValidateXdb -> Validate<--->
-func ValidateXdb(client clientset.Interface, xdb *tapi.Xdb) error {
+func ValidateXdb(client kubernetes.Interface, xdb *tapi.Xdb) error {
 	if xdb.Spec.Version == "" {
 		return fmt.Errorf(`Object 'Version' is missing in '%v'`, xdb.Spec)
 	}
