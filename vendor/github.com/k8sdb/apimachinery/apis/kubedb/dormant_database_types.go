@@ -45,6 +45,14 @@ type OriginSpec struct {
 	// Postgres Spec
 	// +optional
 	Postgres *PostgresSpec `json:"postgres,omitempty"`
+
+	// MySQL Spec
+	// +optional
+	MySQL *MySQLSpec `json:"mysql,omitempty"`
+	// MongoDB Spec
+	// +optional
+	MongoDB *MongoDBSpec `json:"mongodb,omitempty"`
+
 	// Xdb Spec
 	// +optional
 	Xdb *XdbSpec `json:"xdb,omitempty"`

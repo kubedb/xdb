@@ -7,7 +7,7 @@ import (
 
 	"github.com/appscode/go/log"
 	"github.com/appscode/go/types"
-	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
+	api "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	kutildb "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
 	"github.com/k8sdb/apimachinery/pkg/docker"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
@@ -27,7 +27,7 @@ const (
 	durationCheckStatefulSet = time.Minute * 30
 )
 
-func (c *Controller) findService(xdb *tapi.Xdb) (bool, error) {
+func (c *Controller) findService(xdb *api.Xdb) (bool, error) {
 	name := xdb.OffshootName()
 	service, err := c.Client.CoreV1().Services(xdb.Namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
@@ -38,14 +38,14 @@ func (c *Controller) findService(xdb *tapi.Xdb) (bool, error) {
 		}
 	}
 
-	if service.Spec.Selector[tapi.LabelDatabaseName] != name {
+	if service.Spec.Selector[api.LabelDatabaseName] != name {
 		return false, fmt.Errorf(`Intended service "%v" already exists`, name)
 	}
 
 	return true, nil
 }
 
-func (c *Controller) createService(xdb *tapi.Xdb) error {
+func (c *Controller) createService(xdb *api.Xdb) error {
 	svc := &core.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   xdb.OffshootName(),
@@ -59,12 +59,12 @@ func (c *Controller) createService(xdb *tapi.Xdb) error {
 		},
 	}
 	if xdb.Spec.Monitor != nil &&
-		xdb.Spec.Monitor.Agent == tapi.AgentCoreosPrometheus &&
+		xdb.Spec.Monitor.Agent == api.AgentCoreosPrometheus &&
 		xdb.Spec.Monitor.Prometheus != nil {
 		svc.Spec.Ports = append(svc.Spec.Ports, core.ServicePort{
-			Name:       tapi.PrometheusExporterPortName,
-			Port:       tapi.PrometheusExporterPortNumber,
-			TargetPort: intstr.FromString(tapi.PrometheusExporterPortName),
+			Name:       api.PrometheusExporterPortName,
+			Port:       api.PrometheusExporterPortNumber,
+			TargetPort: intstr.FromString(api.PrometheusExporterPortName),
 		})
 	}
 
@@ -75,7 +75,7 @@ func (c *Controller) createService(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) findStatefulSet(xdb *tapi.Xdb) (bool, error) {
+func (c *Controller) findStatefulSet(xdb *api.Xdb) (bool, error) {
 	// SatatefulSet for Xdb database
 	statefulSet, err := c.Client.AppsV1beta1().StatefulSets(xdb.Namespace).Get(xdb.OffshootName(), metav1.GetOptions{})
 	if err != nil {
@@ -86,14 +86,14 @@ func (c *Controller) findStatefulSet(xdb *tapi.Xdb) (bool, error) {
 		}
 	}
 
-	if statefulSet.Labels[tapi.LabelDatabaseKind] != tapi.ResourceKindXdb {
+	if statefulSet.Labels[api.LabelDatabaseKind] != api.ResourceKindXdb {
 		return false, fmt.Errorf(`Intended statefulSet "%v" already exists`, xdb.OffshootName())
 	}
 
 	return true, nil
 }
 
-func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error) {
+func (c *Controller) createStatefulSet(xdb *api.Xdb) (*apps.StatefulSet, error) {
 	// SatatefulSet for Xdb database
 	statefulSet := &apps.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -112,7 +112,7 @@ func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error)
 				Spec: core.PodSpec{
 					Containers: []core.Container{
 						{
-							Name: tapi.ResourceNameXdb,
+							Name: api.ResourceNameXdb,
 							//TODO: Use correct image. Its a template
 							Image:           fmt.Sprintf("%s:%s", docker.ImageXdb, xdb.Spec.Version),
 							ImagePullPolicy: core.PullIfNotPresent,
@@ -140,22 +140,22 @@ func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error)
 	}
 
 	if xdb.Spec.Monitor != nil &&
-		xdb.Spec.Monitor.Agent == tapi.AgentCoreosPrometheus &&
+		xdb.Spec.Monitor.Agent == api.AgentCoreosPrometheus &&
 		xdb.Spec.Monitor.Prometheus != nil {
 		exporter := core.Container{
 			Name: "exporter",
 			Args: []string{
 				"export",
-				fmt.Sprintf("--address=:%d", tapi.PrometheusExporterPortNumber),
+				fmt.Sprintf("--address=:%d", api.PrometheusExporterPortNumber),
 				"--v=3",
 			},
 			Image:           docker.ImageOperator + ":" + c.opt.ExporterTag,
 			ImagePullPolicy: core.PullIfNotPresent,
 			Ports: []core.ContainerPort{
 				{
-					Name:          tapi.PrometheusExporterPortName,
+					Name:          api.PrometheusExporterPortName,
 					Protocol:      core.ProtocolTCP,
-					ContainerPort: int32(tapi.PrometheusExporterPortNumber),
+					ContainerPort: int32(api.PrometheusExporterPortNumber),
 				},
 			},
 		}
@@ -171,7 +171,7 @@ func (c *Controller) createStatefulSet(xdb *tapi.Xdb) (*apps.StatefulSet, error)
 			return nil, err
 		}
 
-		_xdb, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
+		_xdb, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *api.Xdb) *api.Xdb {
 			in.Spec.DatabaseSecret = secretVolumeSource
 			return in
 		})
@@ -234,7 +234,7 @@ func (c *Controller) findSecret(secretName, namespace string) (bool, error) {
 // ---> start
 //TODO: Use this method to create secret dynamically
 // otherwise remove this method
-func (c *Controller) createDatabaseSecret(xdb *tapi.Xdb) (*core.SecretVolumeSource, error) {
+func (c *Controller) createDatabaseSecret(xdb *api.Xdb) (*core.SecretVolumeSource, error) {
 	authSecretName := xdb.Name + "-admin-auth"
 
 	found, err := c.findSecret(authSecretName, xdb.Namespace)
@@ -248,7 +248,7 @@ func (c *Controller) createDatabaseSecret(xdb *tapi.Xdb) (*core.SecretVolumeSour
 			ObjectMeta: metav1.ObjectMeta{
 				Name: authSecretName,
 				Labels: map[string]string{
-					tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
+					api.LabelDatabaseKind: api.ResourceKindXdb,
 				},
 			},
 			Type: core.SecretTypeOpaque,
@@ -321,7 +321,7 @@ func addDataVolume(statefulSet *apps.StatefulSet, pvcSpec *core.PersistentVolume
 // ---> Start
 //TODO: Use this method to add initial script, if supported
 // Otherwise, remove it
-func addInitialScript(statefulSet *apps.StatefulSet, script *tapi.ScriptSourceSpec) {
+func addInitialScript(statefulSet *apps.StatefulSet, script *api.ScriptSourceSpec) {
 	statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts,
 		core.VolumeMount{
 			Name:      "initial-script",
@@ -343,24 +343,24 @@ func addInitialScript(statefulSet *apps.StatefulSet, script *tapi.ScriptSourceSp
 
 // ---> End
 
-func (c *Controller) createDormantDatabase(xdb *tapi.Xdb) (*tapi.DormantDatabase, error) {
-	dormantDb := &tapi.DormantDatabase{
+func (c *Controller) createDormantDatabase(xdb *api.Xdb) (*api.DormantDatabase, error) {
+	dormantDb := &api.DormantDatabase{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      xdb.Name,
 			Namespace: xdb.Namespace,
 			Labels: map[string]string{
-				tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
+				api.LabelDatabaseKind: api.ResourceKindXdb,
 			},
 		},
-		Spec: tapi.DormantDatabaseSpec{
-			Origin: tapi.Origin{
+		Spec: api.DormantDatabaseSpec{
+			Origin: api.Origin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        xdb.Name,
 					Namespace:   xdb.Namespace,
 					Labels:      xdb.Labels,
 					Annotations: xdb.Annotations,
 				},
-				Spec: tapi.OriginSpec{
+				Spec: api.OriginSpec{
 					Xdb: &xdb.Spec,
 				},
 			},
@@ -370,7 +370,7 @@ func (c *Controller) createDormantDatabase(xdb *tapi.Xdb) (*tapi.DormantDatabase
 	initSpec, _ := json.Marshal(xdb.Spec.Init)
 	if initSpec != nil {
 		dormantDb.Annotations = map[string]string{
-			tapi.XdbInitSpec: string(initSpec),
+			api.XdbInitSpec: string(initSpec),
 		}
 	}
 
@@ -379,8 +379,8 @@ func (c *Controller) createDormantDatabase(xdb *tapi.Xdb) (*tapi.DormantDatabase
 	return c.ExtClient.DormantDatabases(dormantDb.Namespace).Create(dormantDb)
 }
 
-func (c *Controller) reCreateXdb(xdb *tapi.Xdb) error {
-	_xdb := &tapi.Xdb{
+func (c *Controller) reCreateXdb(xdb *api.Xdb) error {
+	_xdb := &api.Xdb{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        xdb.Name,
 			Namespace:   xdb.Namespace,
@@ -403,12 +403,12 @@ const (
 	snapshotType_DumpRestore = "dump-restore"
 )
 
-func (c *Controller) createRestoreJob(xdb *tapi.Xdb, snapshot *tapi.Snapshot) (*batch.Job, error) {
+func (c *Controller) createRestoreJob(xdb *api.Xdb, snapshot *api.Snapshot) (*batch.Job, error) {
 	databaseName := xdb.Name
 	jobName := snapshot.OffshootName()
 	jobLabel := map[string]string{
-		tapi.LabelDatabaseName: databaseName,
-		tapi.LabelJobType:      SnapshotProcess_Restore,
+		api.LabelDatabaseName: databaseName,
+		api.LabelJobType:      SnapshotProcess_Restore,
 	}
 	backupSpec := snapshot.Spec.SnapshotStorageSpec
 	bucket, err := backupSpec.Container()

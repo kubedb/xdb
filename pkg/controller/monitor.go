@@ -3,11 +3,12 @@ package controller
 import (
 	"fmt"
 
-	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
-	"github.com/k8sdb/apimachinery/pkg/monitor"
+	"github.com/appscode/kutil/tools/monitoring/agents"
+	mona "github.com/appscode/kutil/tools/monitoring/api"
+	api "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 )
 
-func (c *Controller) newMonitorController(xdb *tapi.Xdb) (monitor.Monitor, error) {
+func (c *Controller) newMonitorController(xdb *api.Xdb) (mona.Agent, error) {
 	monitorSpec := xdb.Spec.Monitor
 
 	if monitorSpec == nil {
@@ -15,38 +16,38 @@ func (c *Controller) newMonitorController(xdb *tapi.Xdb) (monitor.Monitor, error
 	}
 
 	if monitorSpec.Prometheus != nil {
-		return monitor.NewPrometheusController(c.Client, c.ApiExtKubeClient, c.promClient, c.opt.OperatorNamespace), nil
+		return agents.New(monitorSpec.Agent, c.Client, c.ApiExtKubeClient, c.promClient), nil
 	}
 
-	return nil, fmt.Errorf("Monitoring controller not found for %v", monitorSpec)
+	return nil, fmt.Errorf("monitoring controller not found for %v", monitorSpec)
 }
 
-func (c *Controller) addMonitor(xdb *tapi.Xdb) error {
-	ctrl, err := c.newMonitorController(xdb)
+func (c *Controller) addMonitor(xdb *api.Xdb) error {
+	agent, err := c.newMonitorController(xdb)
 	if err != nil {
 		return err
 	}
-	return ctrl.AddMonitor(xdb.ObjectMeta, xdb.Spec.Monitor)
+	return agent.Add(xdb.StatsAccessor(), xdb.Spec.Monitor)
 }
 
-func (c *Controller) deleteMonitor(xdb *tapi.Xdb) error {
-	ctrl, err := c.newMonitorController(xdb)
+func (c *Controller) deleteMonitor(xdb *api.Xdb) error {
+	agent, err := c.newMonitorController(xdb)
 	if err != nil {
 		return err
 	}
-	return ctrl.DeleteMonitor(xdb.ObjectMeta, xdb.Spec.Monitor)
+	return agent.Delete(xdb.StatsAccessor(), xdb.Spec.Monitor)
 }
 
-func (c *Controller) updateMonitor(oldXdb, updatedXdb *tapi.Xdb) error {
+func (c *Controller) updateMonitor(oldXdb, updatedXdb *api.Xdb) error {
 	var err error
-	var ctrl monitor.Monitor
+	var agent mona.Agent
 	if updatedXdb.Spec.Monitor == nil {
-		ctrl, err = c.newMonitorController(oldXdb)
+		agent, err = c.newMonitorController(oldXdb)
 	} else {
-		ctrl, err = c.newMonitorController(updatedXdb)
+		agent, err = c.newMonitorController(updatedXdb)
 	}
 	if err != nil {
 		return err
 	}
-	return ctrl.UpdateMonitor(updatedXdb.ObjectMeta, oldXdb.Spec.Monitor, updatedXdb.Spec.Monitor)
+	return agent.Update(updatedXdb.StatsAccessor(), oldXdb.Spec.Monitor, updatedXdb.Spec.Monitor)
 }

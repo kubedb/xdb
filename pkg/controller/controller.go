@@ -6,7 +6,7 @@ import (
 
 	"github.com/appscode/go/hold"
 	"github.com/appscode/go/log"
-	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1alpha1"
+	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1"
 	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	tcs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
 	kutildb "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
@@ -14,7 +14,7 @@ import (
 	"github.com/k8sdb/apimachinery/pkg/eventer"
 	core "k8s.io/api/core/v1"
 	extensionsobj "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -42,9 +42,9 @@ type Options struct {
 type Controller struct {
 	*amc.Controller
 	// Api Extension Client
-	ApiExtKubeClient apiextensionsclient.Interface
+	ApiExtKubeClient apiextensionsclient.ApiextensionsV1beta1Interface
 	// Prometheus client
-	promClient pcm.MonitoringV1alpha1Interface
+	promClient pcm.MonitoringV1Interface
 	// Cron Controller
 	cronController amc.CronControllerInterface
 	// Event Recorder
@@ -60,9 +60,9 @@ var _ amc.Deleter = &Controller{}
 
 func New(
 	client kubernetes.Interface,
-	apiExtKubeClient apiextensionsclient.Interface,
+	apiExtKubeClient apiextensionsclient.ApiextensionsV1beta1Interface,
 	extClient tcs.KubedbV1alpha1Interface,
-	promClient pcm.MonitoringV1alpha1Interface,
+	promClient pcm.MonitoringV1Interface,
 	cronController amc.CronControllerInterface,
 	opt Options,
 ) *Controller {
@@ -218,7 +218,7 @@ func (c *Controller) ensureCustomResourceDefinition() {
 
 	// TODO: Use appropriate ResourceType.
 	resourceName := tapi.ResourceTypeXdb + "." + tapi.SchemeGroupVersion.Group
-	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(resourceName, metav1.GetOptions{}); err != nil {
+	if _, err := c.ApiExtKubeClient.CustomResourceDefinitions().Get(resourceName, metav1.GetOptions{}); err != nil {
 		if !kerr.IsNotFound(err) {
 			log.Fatalln(err)
 		}
@@ -246,7 +246,7 @@ func (c *Controller) ensureCustomResourceDefinition() {
 		},
 	}
 
-	if _, err := c.ApiExtKubeClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil {
+	if _, err := c.ApiExtKubeClient.CustomResourceDefinitions().Create(crd); err != nil {
 		log.Fatalln(err)
 	}
 }
