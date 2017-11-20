@@ -7,9 +7,9 @@ import (
 	"github.com/appscode/go/hold"
 	"github.com/appscode/go/log"
 	pcm "github.com/coreos/prometheus-operator/pkg/client/monitoring/v1"
-	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
-	tcs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
-	kutildb "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
+	api "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
+	cs "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1"
+	"github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
 	amc "github.com/k8sdb/apimachinery/pkg/controller"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
 	core "k8s.io/api/core/v1"
@@ -61,7 +61,7 @@ var _ amc.Deleter = &Controller{}
 func New(
 	client kubernetes.Interface,
 	apiExtKubeClient apiextensionsclient.ApiextensionsV1beta1Interface,
-	extClient tcs.KubedbV1alpha1Interface,
+	extClient cs.KubedbV1alpha1Interface,
 	promClient pcm.MonitoringV1Interface,
 	cronController amc.CronControllerInterface,
 	opt Options,
@@ -123,12 +123,12 @@ func (c *Controller) watchXdb() {
 
 	_, cacheController := cache.NewInformer(
 		lw,
-		&tapi.Xdb{},
+		&api.Xdb{},
 		c.syncPeriod,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				xdb := obj.(*tapi.Xdb)
-				kutildb.AssignTypeKind(xdb)
+				xdb := obj.(*api.Xdb)
+				util.AssignTypeKind(xdb)
 				if xdb.Status.CreationTime == nil {
 					if err := c.create(xdb); err != nil {
 						log.Errorln(err)
@@ -137,23 +137,23 @@ func (c *Controller) watchXdb() {
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				xdb := obj.(*tapi.Xdb)
-				kutildb.AssignTypeKind(xdb)
+				xdb := obj.(*api.Xdb)
+				util.AssignTypeKind(xdb)
 				if err := c.pause(xdb); err != nil {
 					log.Errorln(err)
 				}
 			},
 			UpdateFunc: func(old, new interface{}) {
-				oldObj, ok := old.(*tapi.Xdb)
+				oldObj, ok := old.(*api.Xdb)
 				if !ok {
 					return
 				}
-				newObj, ok := new.(*tapi.Xdb)
+				newObj, ok := new.(*api.Xdb)
 				if !ok {
 					return
 				}
-				kutildb.AssignTypeKind(oldObj)
-				kutildb.AssignTypeKind(newObj)
+				util.AssignTypeKind(oldObj)
+				util.AssignTypeKind(newObj)
 				if !reflect.DeepEqual(oldObj.Spec, newObj.Spec) {
 					if err := c.update(oldObj, newObj); err != nil {
 						log.Errorln(err)
@@ -168,7 +168,7 @@ func (c *Controller) watchXdb() {
 func (c *Controller) watchDatabaseSnapshot() {
 	labelMap := map[string]string{
 		// TODO: Use appropriate ResourceKind.
-		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
+		api.LabelDatabaseKind: api.ResourceKindXdb,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{
@@ -192,7 +192,7 @@ func (c *Controller) watchDatabaseSnapshot() {
 func (c *Controller) watchDeletedDatabase() {
 	labelMap := map[string]string{
 		// TODO: Use appropriate ResourceKind.
-		tapi.LabelDatabaseKind: tapi.ResourceKindXdb,
+		api.LabelDatabaseKind: api.ResourceKindXdb,
 	}
 	// Watch with label selector
 	lw := &cache.ListWatch{
@@ -217,7 +217,7 @@ func (c *Controller) ensureCustomResourceDefinition() {
 	log.Infoln("Ensuring CustomResourceDefinition...")
 
 	// TODO: Use appropriate ResourceType.
-	resourceName := tapi.ResourceTypeXdb + "." + tapi.SchemeGroupVersion.Group
+	resourceName := api.ResourceTypeXdb + "." + api.SchemeGroupVersion.Group
 	if _, err := c.ApiExtKubeClient.CustomResourceDefinitions().Get(resourceName, metav1.GetOptions{}); err != nil {
 		if !kerr.IsNotFound(err) {
 			log.Fatalln(err)
@@ -234,14 +234,14 @@ func (c *Controller) ensureCustomResourceDefinition() {
 			},
 		},
 		Spec: extensionsobj.CustomResourceDefinitionSpec{
-			Group:   tapi.SchemeGroupVersion.Group,
-			Version: tapi.SchemeGroupVersion.Version,
+			Group:   api.SchemeGroupVersion.Group,
+			Version: api.SchemeGroupVersion.Version,
 			Scope:   extensionsobj.NamespaceScoped,
 			Names: extensionsobj.CustomResourceDefinitionNames{
 				// TODO: Use appropriate const.
-				Plural:     tapi.ResourceTypeXdb,
-				Kind:       tapi.ResourceKindXdb,
-				ShortNames: []string{tapi.ResourceCodeXdb},
+				Plural:     api.ResourceTypeXdb,
+				Kind:       api.ResourceKindXdb,
+				ShortNames: []string{api.ResourceCodeXdb},
 			},
 		},
 	}
@@ -251,7 +251,7 @@ func (c *Controller) ensureCustomResourceDefinition() {
 	}
 }
 
-func (c *Controller) pushFailureEvent(xdb *tapi.Xdb, reason string) {
+func (c *Controller) pushFailureEvent(xdb *api.Xdb, reason string) {
 	c.recorder.Eventf(
 		xdb.ObjectReference(),
 		core.EventTypeWarning,
@@ -261,8 +261,8 @@ func (c *Controller) pushFailureEvent(xdb *tapi.Xdb, reason string) {
 		reason,
 	)
 
-	_, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
-		in.Status.Phase = tapi.DatabasePhaseFailed
+	_, err := util.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *api.Xdb) *api.Xdb {
+		in.Status.Phase = api.DatabasePhaseFailed
 		in.Status.Reason = reason
 		return in
 	})

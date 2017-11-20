@@ -8,7 +8,7 @@ import (
 	"github.com/appscode/go/log"
 	"github.com/appscode/go/types"
 	api "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
-	kutildb "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
+	"github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
 	"github.com/k8sdb/apimachinery/pkg/docker"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
 	"github.com/k8sdb/apimachinery/pkg/storage"
@@ -171,7 +171,7 @@ func (c *Controller) createStatefulSet(xdb *api.Xdb) (*apps.StatefulSet, error) 
 			return nil, err
 		}
 
-		_xdb, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *api.Xdb) *api.Xdb {
+		_xdb, err := util.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *api.Xdb) *api.Xdb {
 			in.Spec.DatabaseSecret = secretVolumeSource
 			return in
 		})

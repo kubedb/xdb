@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/appscode/log"
-	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
-	kutildb "github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
+	api "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
+	"github.com/k8sdb/apimachinery/client/typed/kubedb/v1alpha1/util"
 	"github.com/k8sdb/apimachinery/pkg/eventer"
 	"github.com/k8sdb/apimachinery/pkg/storage"
 	"github.com/k8sdb/xdb/pkg/validator"
@@ -19,12 +19,12 @@ import (
 )
 
 // TODO: Use your resource instead of *tapi.Xdb
-func (c *Controller) create(xdb *tapi.Xdb) error {
+func (c *Controller) create(xdb *api.Xdb) error {
 	// TODO: Use correct TryPatch method
-	_, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
+	_, err := util.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *api.Xdb) *api.Xdb {
 		t := metav1.Now()
 		in.Status.CreationTime = &t
-		in.Status.Phase = tapi.DatabasePhaseCreating
+		in.Status.Phase = api.DatabasePhaseCreating
 		return in
 	})
 
@@ -64,7 +64,7 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 			)
 		}
 
-		_, err := kutildb.TryPatchDormantDatabase(c.ExtClient, xdb.ObjectMeta, func(in *tapi.DormantDatabase) *tapi.DormantDatabase {
+		_, err := util.TryPatchDormantDatabase(c.ExtClient, xdb.ObjectMeta, func(in *api.DormantDatabase) *api.DormantDatabase {
 			in.Spec.Resume = true
 			return in
 		})
@@ -135,7 +135,7 @@ func (c *Controller) create(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
+func (c *Controller) matchDormantDatabase(xdb *api.Xdb) (bool, error) {
 	// Check if DormantDatabase exists or not
 	dormantDb, err := c.ExtClient.DormantDatabases(xdb.Namespace).Get(xdb.Name, metav1.GetOptions{})
 	if err != nil {
@@ -165,16 +165,16 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 
 	// Check DatabaseKind
 	// TODO: Change tapi.ResourceKindXdb
-	if dormantDb.Labels[tapi.LabelDatabaseKind] != tapi.ResourceKindXdb {
+	if dormantDb.Labels[api.LabelDatabaseKind] != api.ResourceKindXdb {
 		return sendEvent(fmt.Sprintf(`Invalid Xdb: "%v". Exists DormantDatabase "%v" of different Kind`,
 			xdb.Name, dormantDb.Name))
 	}
 
 	// Check InitSpec
 	// TODO: Change tapi.XdbInitSpec
-	initSpecAnnotationStr := dormantDb.Annotations[tapi.XdbInitSpec]
+	initSpecAnnotationStr := dormantDb.Annotations[api.XdbInitSpec]
 	if initSpecAnnotationStr != "" {
-		var initSpecAnnotation *tapi.InitSpec
+		var initSpecAnnotation *api.InitSpec
 		if err := json.Unmarshal([]byte(initSpecAnnotationStr), &initSpecAnnotation); err != nil {
 			return sendEvent(err.Error())
 		}
@@ -208,7 +208,7 @@ func (c *Controller) matchDormantDatabase(xdb *tapi.Xdb) (bool, error) {
 	return true, nil
 }
 
-func (c *Controller) ensureService(xdb *tapi.Xdb) error {
+func (c *Controller) ensureService(xdb *api.Xdb) error {
 	// Check if service name exists
 	found, err := c.findService(xdb)
 	if err != nil {
@@ -232,7 +232,7 @@ func (c *Controller) ensureService(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
+func (c *Controller) ensureStatefulSet(xdb *api.Xdb) error {
 	found, err := c.findStatefulSet(xdb)
 	if err != nil {
 		return err
@@ -275,8 +275,8 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 
 	if xdb.Spec.Init != nil && xdb.Spec.Init.SnapshotSource != nil {
 		// TODO: Use correct TryPatch method
-		_, err := kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
-			in.Status.Phase = tapi.DatabasePhaseInitializing
+		_, err := util.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *api.Xdb) *api.Xdb {
+			in.Status.Phase = api.DatabasePhaseInitializing
 			return in
 		})
 		if err != nil {
@@ -296,8 +296,8 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 	}
 
 	// TODO: Use correct TryPatch method
-	_, err = kutildb.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *tapi.Xdb) *tapi.Xdb {
-		in.Status.Phase = tapi.DatabasePhaseRunning
+	_, err = util.TryPatchXdb(c.ExtClient, xdb.ObjectMeta, func(in *api.Xdb) *api.Xdb {
+		in.Status.Phase = api.DatabasePhaseRunning
 		return in
 	})
 	if err != nil {
@@ -307,7 +307,7 @@ func (c *Controller) ensureStatefulSet(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) ensureBackupScheduler(xdb *tapi.Xdb) {
+func (c *Controller) ensureBackupScheduler(xdb *api.Xdb) {
 	// Setup Schedule backup
 	if xdb.Spec.BackupSchedule != nil {
 		err := c.cronController.ScheduleBackup(xdb, xdb.ObjectMeta, xdb.Spec.BackupSchedule)
@@ -330,7 +330,7 @@ const (
 	durationCheckRestoreJob = time.Minute * 30
 )
 
-func (c *Controller) initialize(xdb *tapi.Xdb) error {
+func (c *Controller) initialize(xdb *api.Xdb) error {
 	snapshotSource := xdb.Spec.Init.SnapshotSource
 	// Event for notification that kubernetes objects are creating
 	c.recorder.Eventf(
@@ -383,7 +383,7 @@ func (c *Controller) initialize(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) pause(xdb *tapi.Xdb) error {
+func (c *Controller) pause(xdb *api.Xdb) error {
 	if xdb.Annotations != nil {
 		if val, found := xdb.Annotations["kubedb.com/ignore"]; found {
 			//TODO: Add Event Reason "Ignored"
@@ -460,7 +460,7 @@ func (c *Controller) pause(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) update(oldXdb, updatedXdb *tapi.Xdb) error {
+func (c *Controller) update(oldXdb, updatedXdb *api.Xdb) error {
 	if err := validator.ValidateXdb(c.Client, updatedXdb); err != nil {
 		c.recorder.Event(updatedXdb.ObjectReference(), core.EventTypeWarning, eventer.EventReasonInvalid, err.Error())
 		return err

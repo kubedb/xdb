@@ -4,14 +4,14 @@ import (
 	kutilcore "github.com/appscode/kutil/core/v1"
 	kutilrbac "github.com/appscode/kutil/rbac/v1beta1"
 	"github.com/k8sdb/apimachinery/apis/kubedb"
-	tapi "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
+	api "github.com/k8sdb/apimachinery/apis/kubedb/v1alpha1"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1beta1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (c *Controller) deleteRole(xdb *tapi.Xdb) error {
+func (c *Controller) deleteRole(xdb *api.Xdb) error {
 	// Delete existing Roles
 	if err := c.Client.RbacV1beta1().Roles(xdb.Namespace).Delete(xdb.OffshootName(), nil); err != nil {
 		if !kerr.IsNotFound(err) {
@@ -21,7 +21,7 @@ func (c *Controller) deleteRole(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) createRole(xdb *tapi.Xdb) error {
+func (c *Controller) createRole(xdb *api.Xdb) error {
 	// Create new Roles
 	_, err := kutilrbac.CreateOrPatchRole(
 		c.Client,
@@ -33,7 +33,7 @@ func (c *Controller) createRole(xdb *tapi.Xdb) error {
 			in.Rules = []rbac.PolicyRule{
 				{
 					APIGroups:     []string{kubedb.GroupName},
-					Resources:     []string{tapi.ResourceTypeXdb},
+					Resources:     []string{api.ResourceTypeXdb},
 					ResourceNames: []string{xdb.Name},
 					Verbs:         []string{"get"},
 				},
@@ -51,7 +51,7 @@ func (c *Controller) createRole(xdb *tapi.Xdb) error {
 	return err
 }
 
-func (c *Controller) deleteServiceAccount(xdb *tapi.Xdb) error {
+func (c *Controller) deleteServiceAccount(xdb *api.Xdb) error {
 	// Delete existing ServiceAccount
 	if err := c.Client.CoreV1().ServiceAccounts(xdb.Namespace).Delete(xdb.OffshootName(), nil); err != nil {
 		if !kerr.IsNotFound(err) {
@@ -61,7 +61,7 @@ func (c *Controller) deleteServiceAccount(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) createServiceAccount(xdb *tapi.Xdb) error {
+func (c *Controller) createServiceAccount(xdb *api.Xdb) error {
 	// Create new ServiceAccount
 	_, err := kutilcore.CreateOrPatchServiceAccount(
 		c.Client,
@@ -76,7 +76,7 @@ func (c *Controller) createServiceAccount(xdb *tapi.Xdb) error {
 	return err
 }
 
-func (c *Controller) deleteRoleBinding(xdb *tapi.Xdb) error {
+func (c *Controller) deleteRoleBinding(xdb *api.Xdb) error {
 	// Delete existing RoleBindings
 	if err := c.Client.RbacV1beta1().RoleBindings(xdb.Namespace).Delete(xdb.OffshootName(), nil); err != nil {
 		if !kerr.IsNotFound(err) {
@@ -86,7 +86,7 @@ func (c *Controller) deleteRoleBinding(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) createRoleBinding(xdb *tapi.Xdb) error {
+func (c *Controller) createRoleBinding(xdb *api.Xdb) error {
 	// Ensure new RoleBindings
 	_, err := kutilrbac.CreateOrPatchRoleBinding(
 		c.Client,
@@ -113,7 +113,7 @@ func (c *Controller) createRoleBinding(xdb *tapi.Xdb) error {
 	return err
 }
 
-func (c *Controller) createRBACStuff(xdb *tapi.Xdb) error {
+func (c *Controller) createRBACStuff(xdb *api.Xdb) error {
 	// Delete Existing Role
 	if err := c.deleteRole(xdb); err != nil {
 		return err
@@ -140,7 +140,7 @@ func (c *Controller) createRBACStuff(xdb *tapi.Xdb) error {
 	return nil
 }
 
-func (c *Controller) deleteRBACStuff(xdb *tapi.Xdb) error {
+func (c *Controller) deleteRBACStuff(xdb *api.Xdb) error {
 	// Delete Existing Role
 	if err := c.deleteRole(xdb); err != nil {
 		return err
