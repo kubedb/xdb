@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DOCKER_REGISTRY=${DOCKER_REGISTRY:-appscode}
+DOCKER_REGISTRY=${DOCKER_REGISTRY:-pharmer}
 source $(dirname "${BASH_SOURCE}")/lib.sh
 
 # override this one if you need to change push & pull
@@ -40,9 +40,6 @@ source_repo() {
 			;;
 		pull)
 			docker_pull
-			;;
-		gcr)
-			gcr_pull
 			;;
 		release)
 			docker_release
@@ -90,9 +87,6 @@ binary_repo() {
 			;;
 		pull)
 			docker_pull
-			;;
-		gcr)
-			gcr_pull
 			;;
 		release)
 			docker_release
